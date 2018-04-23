@@ -24,6 +24,16 @@ import invariant from "./invariant";
   const DOCUMENT_NODE = 9; // (整个)文档(DOM树的)节点.
   const DOCUMENT_FRAGMENT_NODE = 11; // 文档片段节点.
 
+  const RESERVED_PROPS = {
+    children: true,
+    defaultValue: true,
+    defaultChecked: true,
+    innerHTML: true,
+    style: true
+  };
+
+  const properties = {};
+
   /**
    * @node      DOM节点.
    */
@@ -36,6 +46,62 @@ import invariant from "./invariant";
         (node.nodeType === COMMENT_NODE &&
           node.nodeValue === " react-mount-point-unstable "))
     );
+  }
+
+  function isReservedProp(name) {
+    return RESERVED_PROPS.hasOwnProperty(name);
+  }
+
+  function shouldConstruct(Component) {
+    return !!(Component.prototype && Component.prototype.isReactComponent);
+  }
+
+  function getPropertyInfo(name) {
+    return properties.hasOwnProperty(name) ? properties[name] : null;
+  }
+
+  function shouldAttributeAcceptBooleanValue(name) {
+    if (isReservedProp(name)) {
+      return true;
+    }
+    var propertyInfo = getPropertyInfo(name);
+    if (propertyInfo) {
+      return (
+        propertyInfo.hasBooleanValue ||
+        propertyInfo.hasStringBooleanValue ||
+        propertyInfo.hasOverloadedBooleanValue
+      );
+    }
+    var prefix = name.toLowerCase().slice(0, 5);
+    return prefix === "data-" || prefix === "aria-";
+  }
+
+  function shouldSetAttribute(name, value) {
+    if (isReservedProp(name)) {
+      return false;
+    }
+    if (
+      name.length > 2 &&
+      (name[0] === "o" || name[0] === "O") &&
+      (name[1] === "n" || name[1] === "N")
+    ) {
+      return false;
+    }
+    if (value === null) {
+      return true;
+    }
+    switch (typeof value) {
+      case "boolean":
+        return shouldAttributeAcceptBooleanValue(name);
+      case "undefined":
+      case "number":
+      case "string":
+      case "object":
+        return true;
+      default:
+        // function, symbol
+        return false;
+    }
   }
 
   /**
@@ -51,15 +117,34 @@ import invariant from "./invariant";
       const textNode = document.createTextNode(vnode);
       docfrag.appendChild(textNode);
     } else if (
-      typeof vnode === "object" &&
-      Object.prototype.toString.call(vnode) === "[object Object]"
+      Object.prototype.toString.call(vnode) === "[object Object]" &&
+      !!vnode.type
     ) {
       const { type, props } = vnode;
-      if (typeof v.type === "string") {
+      if (typeof type === "string") {
+        const rootEl = document.createElement(type);
+        if (!!props) {
+          const { children } = props;
+          for (let propName in props) {
+            let propValue = props[propName];
+            if (shouldSetAttribute(propName, propValue)) {
+              rootEl.setAttribute(propName, propValue);
+            }
+          }
+          if (children) {
+            for (let i = 0; i < children.length; i++) {
+              const child = children[i];
+              render(child, rootEl);
+            }
+          }
+        }
+        docfrag.appendChild(rootEl);
+      } else if (shouldConstruct(vnode.type)) {
+        const rootComponent = new vnode.type(vnode.props);
+        rootComponent.componentWillMount();
+        render.call(rootComponent, rootComponent.render(), docfrag);
+        rootComponent.componentDidMount();
       }
-      const rootEl = document.createElement(type);
-
-      //   console.log(rootEl);
     }
     container.appendChild(docfrag);
   }

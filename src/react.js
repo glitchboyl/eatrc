@@ -10,12 +10,14 @@
     let $props = children.length ? { children } : {},
       key = null,
       ref = null;
-    if (!!props) {
+    if (!props) {
+      props = {};
+    } else {
       ({ key = null, ref = null } = props);
       delete props["key"];
       delete props["ref"];
-      props = Object.assign(props, $props);
     }
+    props = Object.assign(props, $props);
     return {
       type,
       key,
@@ -33,7 +35,7 @@
     this.refs = {};
     // this.updater = updater;
   }
-  Component.constructor.isReactComponent = {};
+  Component.prototype.isReactComponent = {};
 
   Component.prototype.setState = function(partialState, callback) {
     !(
