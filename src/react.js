@@ -2,9 +2,10 @@
 
 (() => {
   /**
-   * @type      DOM节点的标签名.
-   * @props     DOM的属性.
-   * @children  DOM的子节点.
+   * 创建 VDOM对象.
+   * @param {string|function} type DOM节点的类型.
+   * @param {object} props DOM的属性.
+   * @param {array} children DOM的子节点.
    */
   function createElement(type, props, ...children) {
     let $props = children.length ? { children } : {},
@@ -25,9 +26,10 @@
       ref
     };
   }
-
+  
   /**
-   * @props  自定义组件实例的属性.
+   * 创建组件的继承对象.
+   * @param {object} props 自定义组件实例的属性.
    */
   function Component(props) {
     this.props = props;

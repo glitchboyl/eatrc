@@ -4,17 +4,18 @@ import React from "./react";
 export default class extends React.Component {
   constructor(props) {
     super(props);
-    console.log('ass')
+    this.state = {
+      ass: "we can"
+    };
   }
-  componentWillMount(){
-    console.log('we')
+  componentWillMount() {
+    console.log(this)
   }
   render() {
-    console.log('can')
     const { text } = this.props;
-    return <div className="custom">{text}</div>;
+    return <div className="custom">{this.state.ass}<button onClick={()=>{console.log('as')}}>van it</button></div>;
   }
-  componentDidMount(){
-    console.log('!')
+  componentDidMount() {
+    console.log("component did mount.");
   }
 }
