@@ -13,3 +13,5 @@ render(
   </Custom>,
   document.querySelector("#app")
 );
+
+console.log()

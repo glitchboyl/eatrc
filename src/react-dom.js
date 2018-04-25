@@ -1,5 +1,6 @@
 ﻿import React from "./react";
 import invariant from "./invariant";
+import warning from "./warning";
 
 (() => {
   // 最开始未载入 React 会报出错误.
@@ -239,16 +240,31 @@ import invariant from "./invariant";
    * @param {function} fn 事件方法.
    */
   function addDOMEventListener(el, onEvent, fn) {
-    if (el.nodeType !== ELEMENT_NODE) {
-      invariant("Event target is not a DOM element.");
-      return false;
-    }
-    if ((!onEvent || !fn) && typeof fn !== "function") {
-      invariant("Event or EventListener may be a wrong variable.");
-      return false;
-    }
+    !(el.nodeType === ELEMENT_NODE)
+      ? invariant("Event target is not a DOM element.")
+      : void 0;
+    (!onEvent || !fn) && typeof fn !== "function"
+      ? invariant("Event or EventListener may be a wrong variable.")
+      : void 0;
     const event = onEvent[2].toLowerCase() + onEvent.slice(3);
     el.addEventListener(event, fn);
+  }
+
+  function beginWork(currentNode) {
+    const updater = {
+      isMounted() {
+        return true;
+      },
+      enqueueSetState(publicInstance, partialState) {
+        let { props, state } = publicInstance;
+        partialState =
+          typeof partialState === "object"
+            ? partialState
+            : partialState(state, props);
+        publicInstance.state = Object.assign({}, state, partialState);
+      }
+    };
+    currentNode.updater = updater;
   }
 
   /**
@@ -271,6 +287,11 @@ import invariant from "./invariant";
       const { type, props } = vnode;
       if (typeof type === "string") {
         const rootEl = document.createElement(type);
+        rootEl instanceof HTMLUnknownElement
+          ? invariant(
+              "Objects are not valid as a React child (found: object with keys {type}). If you meant to render a collection of children, use an array instead."
+            )
+          : void 0;
         if (!!props) {
           const { children } = props;
           for (let propName in props) {
@@ -291,9 +312,19 @@ import invariant from "./invariant";
         docfrag.appendChild(rootEl);
       } else if (shouldConstruct(vnode.type)) {
         const rootComponent = new vnode.type(vnode.props);
-        rootComponent.componentWillMount();
-        render.call(rootComponent, rootComponent.render(), docfrag);
-        rootComponent.componentDidMount();
+        if (rootComponent.state && typeof rootComponent.state !== "object") {
+          warning("_class.state: must be set to an object or null");
+        }
+        if (typeof rootComponent.componentWillMount === "function") {
+          rootComponent.componentWillMount();
+        }
+        if (typeof rootComponent.render === "function") {
+          render.call(rootComponent, rootComponent.render(), docfrag);
+        }
+        if (typeof rootComponent.componentDidMount === "function") {
+          rootComponent.componentDidMount();
+        }
+        beginWork(rootComponent);
       }
     }
     container.appendChild(docfrag);

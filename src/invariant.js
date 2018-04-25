@@ -1,5 +1,5 @@
-﻿export default text => {
+﻿export default message => {
   const error =
-    text === void 0 ? new Error("Something is wrong !") : new Error(text);
+    message === void 0 ? new Error("Something is wrong!") : new Error(message);
   throw error;
 };
