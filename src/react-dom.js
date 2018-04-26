@@ -250,6 +250,37 @@ import warning from "./warning";
     el.addEventListener(event, fn);
   }
 
+  let internalInstance$1 = null,
+    internalInstance$2 = null;
+  function mutation() {
+    !internalInstance$1 || !internalInstance$2 ? invariant() : void 0;
+    const beforeNode = new internalInstance$1.type(internalInstance$1.props).render();
+    const afterNode = new internalInstance$2.type().render();
+    executePatch(diff(beforeNode, afterNode));
+    internalInstance$1 = Object({}, internalInstance$2);
+  }
+
+  function diff(beforeNode, afterNode) {
+    let index = 0;
+    const patches = {};
+    dfsWalk(beforeNode, afterNode, index, patches);
+    return patches;
+  }
+
+  function dfsWalk(node$1, node$2, index, patches) {
+    console.log(node$1, node$2)
+    console.log(node$1.props.children[1].props.onClick == node$2.props.children[1].props.onClick)
+    patches[index] = [];
+  }
+
+  function diffChildren(childrenNode$1, childrenNode$2, index, patches) {}
+
+  function executePatch(patches) {}
+
+  /**
+   * 节点对象(注入事件队列)开始.
+   * @param {object} currentNode VDOM节点对象.
+   */
   function beginWork(currentNode) {
     const updater = {
       isMounted() {
@@ -262,17 +293,18 @@ import warning from "./warning";
             ? partialState
             : partialState(state, props);
         publicInstance.state = Object.assign({}, state, partialState);
+        mutation();
       }
     };
     currentNode.updater = updater;
   }
 
   /**
-   * 渲染视图.
-   * @param {DOM} vnode DOM节点的标签名.
-   * @param {string} container DOM的属性.
+   * (真)渲染视图.
+   * @param {object} vnode VDOM节点对象.
+   * @param {DOM} container 节点容器.
    */
-  function render(vnode, container) {
+  function renderSubtreeIntoContainer(vnode, container) {
     !isValidContainer(container)
       ? invariant("Target container is not a DOM element.")
       : void 0;
@@ -305,21 +337,32 @@ import warning from "./warning";
           if (children) {
             for (let i = 0; i < children.length; i++) {
               const child = children[i];
-              render(child, rootEl);
+              renderSubtreeIntoContainer(child, rootEl);
             }
           }
         }
         docfrag.appendChild(rootEl);
       } else if (shouldConstruct(vnode.type)) {
         const rootComponent = new vnode.type(vnode.props);
+        // internalInstance$1.type = () => {
+        //   return Object.assign(rootComponent, {});
+        // };
+        internalInstance$2.type = () => {
+          return rootComponent;
+        };
+        internalInstance$2.type.prototype = Object.getPrototypeOf(rootComponent);
         if (rootComponent.state && typeof rootComponent.state !== "object") {
-          warning("_class.state: must be set to an object or null");
+          warning("_class.state: must be set to an object or null.");
         }
         if (typeof rootComponent.componentWillMount === "function") {
           rootComponent.componentWillMount();
         }
         if (typeof rootComponent.render === "function") {
-          render.call(rootComponent, rootComponent.render(), docfrag);
+          renderSubtreeIntoContainer.call(
+            rootComponent,
+            rootComponent.render(),
+            docfrag
+          );
         }
         if (typeof rootComponent.componentDidMount === "function") {
           rootComponent.componentDidMount();
@@ -328,6 +371,17 @@ import warning from "./warning";
       }
     }
     container.appendChild(docfrag);
+  }
+
+  /**
+   * 暴露渲染方法.
+   * @param {object} vnode VDOM节点对象.
+   * @param {DOM} container 节点容器.
+   */
+  function render(vnode, container) {
+    internalInstance$1 = Object.assign({}, vnode);
+    internalInstance$2 = vnode;
+    return renderSubtreeIntoContainer(vnode, container);
   }
 
   const ReactDOM = { render };

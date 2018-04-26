@@ -8,9 +8,7 @@ render(
   //   <div className="test">
   //     hello<span>world!</span>
   //   </div>,
-  <Custom text={"i m custom!"}>
-    <span>world!</span>
-  </Custom>,
+  <Custom text={"i m custom!"}/>,
   document.querySelector("#app")
 );
 

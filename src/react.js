@@ -60,7 +60,6 @@ import warning from "./warning";
         )
       : void 0;
     !this.state ? (this.state = null) : void 0;
-    console.log(this.updater.isMounted());
     this.updater.enqueueSetState(this, partialState);
   };
 
