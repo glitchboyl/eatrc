@@ -1,5 +1,5 @@
-﻿// import React from "react";
-import React from "./react";
+﻿import React from "react";
+// import React from "./react";
 
 export default class extends React.Component {
   constructor(props) {
@@ -10,10 +10,17 @@ export default class extends React.Component {
     };
   }
   componentWillMount() {
-    console.log(this);
+    // console.log(this);
   }
   render() {
     const { text } = this.props;
+    const test = (() => {
+      let arr = [];
+      for (let i = 0; i < 5; i++) {
+        arr.push(<span key={i}>{i}</span>);
+      }
+      return arr;
+    })();
     return (
       <div className={this.state.class}>
         {this.state.ass}
@@ -24,6 +31,10 @@ export default class extends React.Component {
         >
           van it
         </button>
+        <br />
+        {test}
+
+        {this.state.ass === 'deep dark' ?  <span>call</span> : null}
       </div>
     );
   }

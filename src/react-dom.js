@@ -56,6 +56,87 @@ import warning from "./warning";
 
   const properties = {}; // 空的(原型链承载)对象.
 
+  const HostRoot = 1; // Root of a host tree. Could be nested inside another node.
+  const FunctionalComponent = 2;
+  const ClassComponent = 3;
+  const HostComponent = 4;
+  const HostText = 5;
+  const Fragment = 6;
+
+  const randomKey = Math.random()
+    .toString(36)
+    .slice(2);
+  const internalInstanceKey = "__reactInternalInstance$" + randomKey;
+  const internalEventHandlersKey = "__reactEventHandlers$" + randomKey;
+
+  function get(key) {
+    return key._reactInternalFiber;
+  }
+
+  function has(key) {
+    return key._reactInternalFiber !== undefined;
+  }
+
+  function set(key, value) {
+    key._reactInternalFiber = value;
+  }
+
+  function createUpdateQueue(baseState) {
+    const queue = {
+      baseState
+    };
+    return queue;
+  }
+
+  function insertUpdateIntoFiber(fiber, update) {}
+
+  function FiberNode(tag, key) {
+    // Instance
+    this.tag = tag;
+    this.key = key;
+    this.type = null;
+    this.stateNode = null;
+
+    // Fiber
+    this["return"] = null;
+    this.child = null;
+    this.sibling = null;
+    this.index = 0;
+
+    this.ref = null;
+
+    this.memoizedProps = null;
+    this.memoizedState = null;
+    this.updateQueue = null;
+  }
+
+  const createFiber = (tag, key) => {
+    return new FiberNode(tag, key);
+  };
+
+  function createHostRootFiber() {
+    const fiber = createFiber(HostRoot, null);
+    return fiber;
+  }
+
+  function createFiberRoot(containerInfo) {
+    const uninitializedFiber = createHostRootFiber();
+    const root = {
+      current: uninitializedFiber,
+      containerInfo
+    };
+    uninitializedFiber.stateNode = root;
+    return root;
+  }
+
+  const DOMRenderer = {
+    createContainer(containerInfo) {
+      return createFiberRoot(containerInfo);
+    },
+    updateContainer() {},
+    unBatchedUpdates() {}
+  };
+
   /**
    * 检测 DOM节点 是否是有效节点.
    * @param {object} node DOM节点.
@@ -250,32 +331,37 @@ import warning from "./warning";
     el.addEventListener(event, fn);
   }
 
-  let internalInstance$1 = null,
-    internalInstance$2 = null;
+  // let internalInstance$1 = null,
+  //   internalInstance$2 = null;
   function mutation() {
-    !internalInstance$1 || !internalInstance$2 ? invariant() : void 0;
-    const beforeNode = new internalInstance$1.type(internalInstance$1.props).render();
-    const afterNode = new internalInstance$2.type().render();
-    executePatch(diff(beforeNode, afterNode));
-    internalInstance$1 = Object({}, internalInstance$2);
+    // !internalInstance$1 || !internalInstance$2 ? invariant() : void 0;
+    // // const beforeNode = new internalInstance$1.type(
+    // //   internalInstance$1.props
+    // // ).render();
+    // // const afterNode = new internalInstance$2.type().render();
+    // // executePatch(diff(beforeNode, afterNode));
+    // internalInstance$1 = Object({}, internalInstance$2);
   }
 
-  function diff(beforeNode, afterNode) {
-    let index = 0;
-    const patches = {};
-    dfsWalk(beforeNode, afterNode, index, patches);
-    return patches;
-  }
+  // function diff(beforeNode, afterNode) {
+  //   let index = 0;
+  //   const patches = {};
+  //   dfsWalk(beforeNode, afterNode, index, patches);
+  //   return patches;
+  // }
 
-  function dfsWalk(node$1, node$2, index, patches) {
-    console.log(node$1, node$2)
-    console.log(node$1.props.children[1].props.onClick == node$2.props.children[1].props.onClick)
-    patches[index] = [];
-  }
+  // function dfsWalk(node$1, node$2, index, patches) {
+  //   console.log(node$1, node$2);
+  //   console.log(
+  //     node$1.props.children[1].props.onClick ==
+  //       node$2.props.children[1].props.onClick
+  //   );
+  //   patches[index] = [];
+  // }
 
-  function diffChildren(childrenNode$1, childrenNode$2, index, patches) {}
+  // function diffChildren(childrenNode$1, childrenNode$2, index, patches) {}
 
-  function executePatch(patches) {}
+  // function executePatch(patches) {}
 
   /**
    * 节点对象(注入事件队列)开始.
@@ -308,69 +394,74 @@ import warning from "./warning";
     !isValidContainer(container)
       ? invariant("Target container is not a DOM element.")
       : void 0;
-    const docfrag = document.createDocumentFragment();
-    if (typeof vnode === "string") {
-      const textNode = document.createTextNode(vnode);
-      docfrag.appendChild(textNode);
-    } else if (
-      Object.prototype.toString.call(vnode) === "[object Object]" &&
-      !!vnode.type
-    ) {
-      const { type, props } = vnode;
-      if (typeof type === "string") {
-        const rootEl = document.createElement(type);
-        rootEl instanceof HTMLUnknownElement
-          ? invariant(
-              "Objects are not valid as a React child (found: object with keys {type}). If you meant to render a collection of children, use an array instead."
-            )
-          : void 0;
-        if (!!props) {
-          const { children } = props;
-          for (let propName in props) {
-            let propValue = props[propName];
-            if (shouldSetAttribute(propName, propValue)) {
-              rootEl.setAttribute(propName, propValue);
-            } else if (shouldAddEventListener(propName)) {
-              addDOMEventListener(rootEl, propName, propValue);
-            }
-          }
-          if (children) {
-            for (let i = 0; i < children.length; i++) {
-              const child = children[i];
-              renderSubtreeIntoContainer(child, rootEl);
-            }
-          }
-        }
-        docfrag.appendChild(rootEl);
-      } else if (shouldConstruct(vnode.type)) {
-        const rootComponent = new vnode.type(vnode.props);
-        // internalInstance$1.type = () => {
-        //   return Object.assign(rootComponent, {});
-        // };
-        internalInstance$2.type = () => {
-          return rootComponent;
-        };
-        internalInstance$2.type.prototype = Object.getPrototypeOf(rootComponent);
-        if (rootComponent.state && typeof rootComponent.state !== "object") {
-          warning("_class.state: must be set to an object or null.");
-        }
-        if (typeof rootComponent.componentWillMount === "function") {
-          rootComponent.componentWillMount();
-        }
-        if (typeof rootComponent.render === "function") {
-          renderSubtreeIntoContainer.call(
-            rootComponent,
-            rootComponent.render(),
-            docfrag
-          );
-        }
-        if (typeof rootComponent.componentDidMount === "function") {
-          rootComponent.componentDidMount();
-        }
-        beginWork(rootComponent);
-      }
+
+    let root = container._reactRootContainer;
+    if (!root) {
+      let newRoot = DOMRenderer.createContainer(container);
+      root = container._reactRootContainer = newRoot;
+      DOMRenderer.unBatchedUpdates(() => {
+        DOMRenderer.updateContainer(children, root);
+      });
+    } else {
+      DOMRenderer.updateContainer(children, root);
     }
-    container.appendChild(docfrag);
+
+    // const docfrag = document.createDocumentFragment();
+    // if (typeof vnode === "string") {
+    //   const textNode = document.createTextNode(vnode);
+    //   docfrag.appendChild(textNode);
+    // } else if (
+    //   Object.prototype.toString.call(vnode) === "[object Object]" &&
+    //   !!vnode.type
+    // ) {
+    //   const { type, props } = vnode;
+    //   if (typeof type === "string") {
+    //     const rootEl = document.createElement(type);
+    //     rootEl instanceof HTMLUnknownElement
+    //       ? invariant(
+    //           "Objects are not valid as a React child (found: object with keys {type}). If you meant to render a collection of children, use an array instead."
+    //         )
+    //       : void 0;
+    //     if (!!props) {
+    //       const { children } = props;
+    //       for (let propName in props) {
+    //         let propValue = props[propName];
+    //         if (shouldSetAttribute(propName, propValue)) {
+    //           rootEl.setAttribute(propName, propValue);
+    //         } else if (shouldAddEventListener(propName)) {
+    //           addDOMEventListener(rootEl, propName, propValue);
+    //         }
+    //       }
+    //       if (children) {
+    //         for (let i = 0; i < children.length; i++) {
+    //           const child = children[i];
+    //           renderSubtreeIntoContainer(child, rootEl);
+    //         }
+    //       }
+    //     }
+    //     docfrag.appendChild(rootEl);
+    //   } else if (shouldConstruct(vnode.type)) {
+    //     const rootComponent = new vnode.type(vnode.props);
+    //     if (rootComponent.state && typeof rootComponent.state !== "object") {
+    //       warning("_class.state: must be set to an object or null.");
+    //     }
+    //     if (typeof rootComponent.componentWillMount === "function") {
+    //       rootComponent.componentWillMount();
+    //     }
+    //     if (typeof rootComponent.render === "function") {
+    //       renderSubtreeIntoContainer.call(
+    //         rootComponent,
+    //         rootComponent.render(),
+    //         docfrag
+    //       );
+    //     }
+    //     if (typeof rootComponent.componentDidMount === "function") {
+    //       rootComponent.componentDidMount();
+    //     }
+    //     beginWork(rootComponent);
+    //   }
+    // }
+    // container.appendChild(docfrag);
   }
 
   /**
@@ -379,8 +470,6 @@ import warning from "./warning";
    * @param {DOM} container 节点容器.
    */
   function render(vnode, container) {
-    internalInstance$1 = Object.assign({}, vnode);
-    internalInstance$2 = vnode;
     return renderSubtreeIntoContainer(vnode, container);
   }
 
