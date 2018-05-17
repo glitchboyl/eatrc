@@ -11,30 +11,98 @@ import warning from "./warning";
     }
   };
 
+  const ReactElement = (type, key, ref, props) => {
+    const element = {
+      type,
+      key,
+      ref,
+      props
+    };
+    if (Object.freeze) {
+      Object.freeze(element.props);
+      Object.freeze(element);
+    }
+    return element;
+  };
+
+  function hasValidRef({ ref }) {
+    return ref !== undefined;
+  }
+
+  function hasValidKey({ key }) {
+    return key !== undefined;
+  }
+
+  const RESERVED_PROPS = {
+    key: true,
+    ref: true
+  };
+
   /**
    * 创建 VDOM对象.
    * @param {string|function} type DOM节点的类型.
-   * @param {object} props DOM的属性.
+   * @param {object} config DOM的属性.
    * @param {array} children DOM的子节点.
    */
-  function createElement(type, props, ...children) {
-    let $props = children.length ? { children } : {},
-      key = null,
-      ref = null;
-    if (!props) {
-      props = {};
-    } else {
-      ({ key = null, ref = null } = props);
-      delete props["key"];
-      delete props["ref"];
+  function createElement(type, config, ...children) {
+    let propName;
+    const props = {};
+    let key = null;
+    let ref = null;
+
+    if (config != null) {
+      if (hasValidRef(config)) {
+        ({ ref } = config);
+      }
+      if (hasValidKey(config)) {
+        ({ key } = config);
+      }
+      for (propName in config) {
+        if (
+          hasOwnProperty.call(config, propName) &&
+          !RESERVED_PROPS.hasOwnProperty(propName)
+        ) {
+          props[propName] = config[propName];
+        }
+      }
     }
-    props = Object.assign(props, $props);
-    return {
-      type,
-      key,
-      props,
-      ref
-    };
+
+    const childrenLength = children.length;
+    if (childrenLength === 1) {
+      props.children = children[0];
+    } else if (childrenLength > 1) {
+      props.children = children;
+      Object.freeze(props.children);
+    }
+
+    // Resolve default props
+    if (type && type.defaultProps) {
+      var defaultProps = type.defaultProps;
+      for (propName in defaultProps) {
+        if (props[propName] === undefined) {
+          props[propName] = defaultProps[propName];
+        }
+      }
+    }
+
+    return ReactElement(type, key, ref, props);
+    // let $props = children.length ? { children } : {},
+    //   key = null,
+    //   ref = null;
+    // if (!props) {
+    //   props = {};
+    // } else {
+    //   ({ key = null, ref = null } = props);
+    //   delete props["key"];
+    //   delete props["ref"];
+    // }
+    // props = Object.assign(props, $props);
+    // return {
+    //   type,
+    //   key,
+    //   props,
+    //   ref
+    // };
   }
 
   /**
@@ -43,7 +111,6 @@ import warning from "./warning";
    */
   function Component(props) {
     this.props = props;
-    // this.context = context;
     this.refs = {};
     this.updater = ReactNoopUpdateQueue;
   }

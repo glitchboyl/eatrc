@@ -4,15 +4,7 @@ import { render } from "react-dom";
 // import { render } from "./react-dom";
 import Custom from "./test";
 
-// render(
-//   //   <div className="test">
-//   //     hello<span>world!</span>
-//   //   </div>,
-//   <Custom text={"i m custom!"} children="qwe">
-//     <span>asd</span>
-//   </Custom>,
-//   document.querySelector("#app")
-// );
+// var a = <div className="test">hello<span>world!</span></div>;
 
 render(
   <Custom text={"i m custom!"} children="qwe">
