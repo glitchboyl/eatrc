@@ -3,20 +3,21 @@ import warning from "./warning";
 
 (() => {
   const ReactNoopUpdateQueue = {
-    isMounted() {
-      return false;
+    enqueueSetState(publicInstance, partialState, callback) {
+      warning("This is a no-op.");
     },
-    enqueueSetState(publicInstance, partialState) {
-      warning("_class(...): Can only update a mounted or mounting component.");
+    enqueueReplaceState(publicInstance, completeState, callback) {
+      warning("This is a no-op.");
     }
   };
 
-  const ReactElement = (type, key, ref, props) => {
+  const ReactElement = (type, key, ref, owner, props) => {
     const element = {
       type,
       key,
       ref,
-      props
+      props,
+      _owner: owner
     };
     if (Object.freeze) {
       Object.freeze(element.props);
@@ -85,24 +86,7 @@ import warning from "./warning";
       }
     }
 
-    return ReactElement(type, key, ref, props);
-    // let $props = children.length ? { children } : {},
-    //   key = null,
-    //   ref = null;
-    // if (!props) {
-    //   props = {};
-    // } else {
-    //   ({ key = null, ref = null } = props);
-    //   delete props["key"];
-    //   delete props["ref"];
-    // }
-    // props = Object.assign(props, $props);
-    // return {
-    //   type,
-    //   key,
-    //   props,
-    //   ref
-    // };
+    return ReactElement(type, key, ref, null, props);
   }
 
   /**

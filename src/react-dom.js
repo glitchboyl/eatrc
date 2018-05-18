@@ -10,6 +10,31 @@ import warning from "./warning";
       )
     : void 0;
 
+  function get(key) {
+    return key._reactInternalFiber;
+  }
+
+  function has(key) {
+    return key._reactInternalFiber !== undefined;
+  }
+
+  function set(key, value) {
+    key._reactInternalFiber = value;
+  }
+
+  function getComponentName(fiber) {
+    var type = fiber.type;
+
+    if (typeof type === "string") {
+      return type;
+    }
+    if (typeof type === "function") {
+      return type.displayName || type.name;
+    }
+    return null;
+  }
+
+  const IndeterminateComponent = 0;
   const HostRoot = 1; // Root of a host tree. Could be nested inside another node.
   const FunctionalComponent = 2;
   const ClassComponent = 3;
@@ -124,6 +149,14 @@ import warning from "./warning";
     );
   }
 
+  const createFiber = (tag, key, internalContextTag) => {
+    return new FiberNode(tag, key, internalContextTag);
+  };
+
+  function shouldConstruct(Component) {
+    return !!(Component.prototype && Component.prototype.isReactComponent);
+  }
+
   function createFiberRoot(containerInfo) {
     const uninitializedFiber = createHostRootFiber();
     const root = {
@@ -143,8 +176,56 @@ import warning from "./warning";
     return fiber;
   }
 
-  function createFiber(tag, key, internalContextTag) {
-    return new FiberNode(tag, key, internalContextTag);
+  function createFiberFromElement(element, internalContextTag, expirationTime) {
+    let fiber = void 0;
+    const { type, key } = element;
+    if (typeof type === "function") {
+      fiber = shouldConstruct(type)
+        ? createFiber(ClassComponent, key, internalContextTag)
+        : createFiber(IndeterminateComponent, key, internalContextTag);
+      fiber.type = type;
+      fiber.pendingProps = element.props;
+    } else if (typeof type === "string") {
+      fiber = createFiber(HostComponent, key, internalContextTag);
+      fiber.type = type;
+      fiber.pendingProps = element.props;
+    } else if (
+      typeof type === "object" &&
+      type !== null &&
+      typeof type.tag === "number"
+    ) {
+      fiber = type;
+      fiber.pendingProps = element.props;
+    } else {
+      invariant(
+        `Element type is invalid: expected a string (for built-in components) or a class/function (for composite components) but got: ${
+          type == null ? type : typeof type
+        }`
+      );
+    }
+
+    fiber.expirationTime = expirationTime;
+
+    return fiber;
+  }
+
+  function createFiberFromText(content, internalContextTag, expirationTime) {
+    const fiber = createFiber(HostText, null, internalContextTag);
+    fiber.pendingProps = content;
+    fiber.expirationTime = expirationTime;
+    return fiber;
+  }
+
+  function createFiberFromFragment(
+    elements,
+    internalContextTag,
+    expirationTime,
+    key
+  ) {
+    const fiber = createFiber(Fragment, key, internalContextTag);
+    fiber.pendingProps = elements;
+    fiber.expirationTime = expirationTime;
+    return fiber;
   }
 
   function createWorkInProgress(current, pendingProps, expirationTime) {
@@ -204,7 +285,7 @@ import warning from "./warning";
     props,
     renderExpirationTime
   ) {
-    debugger;
+    // debugger
     if (current !== null && current.updateQueue === queue) {
       const { baseState, expirationTime, first, last, isInitialized } = queue;
       queue = workInProgress.updateQueue = {
@@ -296,7 +377,7 @@ import warning from "./warning";
   }
 
   function getStateFromUpdate(update, instance, prevState, props) {
-    debugger;
+    // debugger
     const { partialState } = update;
     if (typeof partialState === "function") {
       let updateFn = partialState;
@@ -353,7 +434,6 @@ import warning from "./warning";
     queue2.last = update;
   }
 
-  let enableAsyncSubtreeAPI = true;
   let enableUserTimingAPI = true;
 
   function recordScheduleUpdate() {
@@ -655,7 +735,7 @@ import warning from "./warning";
   }
 
   function performUnitOfWork(workInProgress) {
-    // debugger
+    debugger;
     const current = workInProgress.alternate;
     let next = beginWork(current, workInProgress, nextRenderExpirationTime);
     if (next === null) {
@@ -750,6 +830,7 @@ import warning from "./warning";
   }
 
   function beginWork(current, workInProgress, renderExpirationTime) {
+    debugger;
     if (
       workInProgress.expirationTime === NoWork ||
       workInProgress.expirationTime > renderExpirationTime
@@ -785,7 +866,178 @@ import warning from "./warning";
     }
   }
 
+  const updater = {
+    enqueueSetState(instance, partialState, callback) {
+      const fiber = get(instance);
+      callback = callback === void 0 ? null : callback;
+      const expirationTime = computeExpirationForFiber(fiber);
+      const update = {
+        expirationTime,
+        partialState,
+        callback,
+        isReplace: false,
+        isForced: false,
+        nextCallback: null,
+        next: null
+      };
+      insertUpdateIntoFiber(fiber, update);
+      scheduleWork(fiber, expirationTime);
+    },
+    enqueueReplaceState(instance, state, callback) {
+      const fiber = get(instance);
+      callback = callback === void 0 ? null : callback;
+      const update = {
+        expirationTime,
+        partialState: state,
+        callback,
+        isReplace: true,
+        isForced: false,
+        nextCallback: null,
+        next: null
+      };
+      insertUpdateIntoFiber(fiber, update);
+      scheduleWork(fiber, expirationTime);
+    }
+  };
+
+  function resetInputPointers(workInProgress, instance) {
+    instance.props = workInProgress.memorizedProps;
+    instance.state = workInProgress.memorizedState;
+  }
+
+  function adoptClassInstance(workInProgress, instance) {
+    instance.updater = updater;
+    workInProgress.stateNode = instance;
+    set(instance, workInProgress);
+  }
+
+  function constructClassInstance(workInProgress, props) {
+    const { type } = workInProgress;
+    const instance = new type(props);
+    adoptClassInstance(workInProgress, instance);
+    return instance;
+  }
+
+  function mountClassInstance(workInProgress, renderExpirationTime) {
+    const current = workInProgress.alternate;
+    const instance = workInProgress.stateNode;
+    const state = instance.state || null;
+    const props = workInProgress.pendingProps;
+
+    !props
+      ? invariant(
+          "There must be pending props for an initial mount. This error is likely caused by a bug in React. Please file an issue."
+        )
+      : void 0;
+
+    instance.props = props;
+    instance.state = workInProgress.memorizedState = state;
+    instance.refs = {};
+
+    if (typeof instance.componentWillMount === "function") {
+      callComponentWillMount(workInProgress, instance);
+      const { updateQueue } = workInProgress;
+      if (updateQueue !== null) {
+        instance.state = processUpdateQueue(
+          current,
+          workInProgress,
+          updateQueue,
+          instance,
+          props,
+          renderExpirationTime
+        );
+      }
+    }
+    if (typeof instance.componentDidMount === "function") {
+      workInProgress.effectTag = Update;
+    }
+  }
+
+  function updateClassInstance(current, workInProgress, renderExpirationTime) {
+    const instance = workInProgress.stateNode;
+    resetInputPointers(workInProgress, instance);
+
+    const oldProps = workInProgress.memorizedProps;
+    let newProps = workInProgress.pendingProps;
+    if (!newProps) {
+      newProps = oldProps;
+      !(newProps != null)
+        ? invariant(
+            "There should always be pending or memoized props. This error is likely caused by a bug in React. Please file an issue."
+          )
+        : void 0;
+    }
+    if (
+      typeof instance.componentWillReceiveProps === "function" &&
+      oldProps !== newProps
+    ) {
+      callComponentWillReceiveProps(workInProgress, instance, newProps);
+    }
+
+    const oldState = workInProgress.memorizedState;
+    let newState = void 0;
+    if (workInProgress.updateQueue !== null) {
+      newState = processUpdateQueue(
+        current,
+        workInProgress,
+        workInProgress.updateQueue,
+        instance,
+        newProps,
+        renderExpirationTime
+      );
+    } else {
+      newState = oldState;
+    }
+
+    if (
+      oldProps === newProps &&
+      oldState === newState &&
+      !(
+        workInProgress.updateQueue !== null &&
+        workInProgress.updateQueue.hasForceUpdate
+      )
+    ) {
+      if (typeof instance.componentDidUpdate === "function") {
+        workInProgress.effectTag = Update;
+      }
+      return false;
+    }
+
+    const shouldUpdate = checkShouldComponentUpdate(
+      workInProgress,
+      oldProps,
+      newProps,
+      oldState,
+      newState
+    );
+    if (shouldUpdate) {
+      if (typeof instance.componentWillUpdate === "function") {
+        instance.componentWillUpdate(newProps, newState);
+      }
+      if (typeof instance.componentDidUpdate === "function") {
+        workInProgress.effectTag = Update;
+      }
+    } else {
+      if (typeof instance.componentDidUpdate === "function") {
+        if (
+          oldProps !== current.memorizedProps ||
+          oldState !== current.memorizedState
+        ) {
+          workInProgress.effectTag = Update;
+        }
+      }
+      workInProgress.memorizedProps = newProps;
+      workInProgress.memorizedState = newState;
+    }
+
+    instance.props = newProps;
+    instance.state = newState;
+    
+    return shouldUpdate;
+  }
+
   function updateHostRoot(current, workInProgress, renderExpirationTime) {
+    debugger;
     const { updateQueue } = workInProgress;
     if (updateQueue !== null) {
       const prevState = workInProgress.memorizedState;
@@ -800,7 +1052,7 @@ import warning from "./warning";
       if (prevState === state) {
         return bailoutOnAlreadyFinishedWork(current, workInProgress);
       }
-      const { element } = state.element;
+      const { element } = state;
       let root = workInProgress.stateNode;
       if (current === null || current.child === null) {
         workInProgress.effectTag = Placement;
@@ -818,7 +1070,90 @@ import warning from "./warning";
     return bailoutOnAlreadyFinishedWork(current, workInProgress);
   }
 
+  function updateFunctionalComponent(current, workInProgress) {
+    // const fn = workInProgress.type;
+    // const { memorizedProps } = workInProgress;
+    // let nextProps = workInProgress.pendingProps;
+    // if(hasContextChanged()){
+    //   if(nextProps === null){
+    //     nextProps = memorizedProps;
+    //   }
+    // } else {
+    //   if(nextProps === null || memorizedProps === nextProps) {
+    //     return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    //   }
+    // }
+    // const unmaskedContext = getUnmaskedContext(workInProgress);
+    // const
+  }
+
+  function updateClassComponent(current, workInProgress, renderExpirationTime) {
+    let shouldUpdate = void 0;
+    if (current === null) {
+      if (!workInProgress.stateNode) {
+        constructClassInstance(workInProgress, workInProgress.pendingProps);
+        mountClassInstance(workInProgress, renderExpirationTime);
+        shouldUpdate;
+      } else {
+        invariant("Resuming work not yet implemented.");
+      }
+    } else {
+      shouldUpdate = updateClassInstance(
+        current,
+        workInProgress,
+        renderExpirationTime
+      );
+    }
+    return finishClassComponent(current, workInProgress, shouldUpdate);
+  }
+
+  function updateHostComponent() {}
+
+  function updateHostText() {}
+
+  function updateFragment() {}
+
   function ChildReconciler(shouldTrackSideEffects) {
+    function createChild(returnFiber, newChild, expirationTime) {
+      if (typeof newChild === "string" || typeof newChild === "number") {
+        const created = createFiberFromText(
+          "" + newChild,
+          returnFiber.internalContextTag,
+          expirationTime
+        );
+        created["return"] = returnFiber;
+        return created;
+      }
+
+      if (
+        typeof newChild === "object" &&
+        newChild !== null &&
+        newChild.type !== void 0
+      ) {
+        const created = createFiberFromElement(
+          newChild,
+          returnFiber.internalContextTag,
+          expirationTime
+        );
+        created.ref = coerceRef(null, newChild);
+        created["return"] = returnFiber;
+        return created;
+      }
+
+      if (Array.isArray(newChild)) {
+        const created = createFiberFromFragment(
+          newChild,
+          returnFiber.internalContextTag,
+          expirationTime,
+          newChild.key
+        );
+        created["return"] = returnFiber;
+        return created;
+      }
+
+      return null;
+    }
+
     function deleteChild(returnFiber, childToDelete) {
       if (!shouldTrackSideEffects) {
         return;
@@ -847,6 +1182,189 @@ import warning from "./warning";
       return null;
     }
 
+    function placeSingleChild(newFiber) {
+      if (shouldTrackSideEffects && newFiber.alternate === null) {
+        newFiber.effectTag = Placement;
+      }
+      return newFiber;
+    }
+
+    function placeChild(newFiber, lastPlacedIndex, newIndex) {
+      newFiber.index = newIndex;
+      if (!shouldTrackSideEffects) {
+        return lastPlacedIndex;
+      }
+      const current = newFiber.alternate;
+      if (current !== null) {
+        const oldIndex = current.index;
+        if (oldIndex < lastPlacedIndex) {
+          newFiber.effectTag = Placement;
+          return lastPlacedIndex;
+        } else {
+          return oldIndex;
+        }
+      } else {
+        newFiber.effectTag = Placement;
+        return lastPlacedIndex;
+      }
+    }
+
+    function updateSlot(returnFiber, oldFiber, newChild, expirationTime) {
+      const key = oldFiber !== null ? oldFiber.key : null;
+      if (typeof newChild === "string" || typeof newChild === "number") {
+        if (key !== null) {
+          return null;
+        }
+        return updateTextNode(
+          returnFiber,
+          oldFiber,
+          "" + newChild,
+          expirationTime
+        );
+      }
+
+      if (typeof newChild === "object" && newChild !== null) {
+        if (newChild.type !== void 0) {
+          if (newChild.key === key) {
+            return updateElement(
+              returnFiber,
+              oldFiber,
+              newChild,
+              expirationTime
+            );
+          } else {
+            return null;
+          }
+        }
+
+        if (Array.isArray(newChild)) {
+          if (key !== null) {
+            return null;
+          }
+          return updateFragment(
+            returnFiber,
+            oldFiber,
+            newChild,
+            expirationTime,
+            null
+          );
+        }
+      }
+      return null;
+    }
+
+    function mapRemainingChildren(returnFiber, currentFirstChild) {
+      const existingChildren = new Map();
+      let existingChild = currentFirstChild;
+      while (existingChild !== null) {
+        if (existingChild.key !== null) {
+          existingChildren.set(existingChild.key, existingChild);
+        } else {
+          existingChildren.set(existingChild.index, existingChild);
+        }
+        existingChild = existingChild.sibling;
+      }
+      return existingChildren;
+    }
+
+    function updateFromMap(
+      existingChildren,
+      returnFiber,
+      newIndex,
+      newChild,
+      expirationTime
+    ) {
+      if (typeof newChild === "string" || typeof newChild === "number") {
+        const matchedFiber = existingChildren.get(newIndex) || null;
+        return updateTextNode(
+          returnFiber,
+          matchedFiber,
+          "" + newChild,
+          expirationTime
+        );
+      }
+
+      if (typeof newChild === "object" && newChild !== null) {
+        if (newChild.type !== void 0) {
+          const matchedFiber = existingChildren.get(
+            newChild.key === null ? newIndex : newChild.key
+          );
+          return updateElement(
+            returnFiber,
+            matchedFiber,
+            newChild,
+            expirationTime
+          );
+        }
+
+        if (Array.isArray(newChild)) {
+          const matchedFiber = existingChildren.get(newIndex) || null;
+          return updateFragment(
+            returnFiber,
+            matchedFiber,
+            newChild,
+            expirationTime,
+            null
+          );
+        }
+      }
+
+      return null;
+    }
+
+    function updateElement(returnFiber, current, element, expirationTime) {
+      let el = void 0;
+      if (current !== null && current.type === element.type) {
+        el = useFiber(current, element.props, expirationTime);
+      } else {
+        el = createFiberFromElement(
+          element,
+          returnFiber.internalContextTag,
+          expirationTime
+        );
+      }
+      el.ref = coerceRef(current, element);
+      el["return"] = returnFiber;
+      return el;
+    }
+
+    function updateTextNode(returnFiber, current, textContent, expirationTime) {
+      let textNode = void 0;
+      if (current === null || current.tag !== HostText) {
+        textNode = createFiberFromText(
+          textContent,
+          returnFiber.internalContextTag,
+          expirationTime
+        );
+      } else {
+        textNode = useFiber(current, textContent, expirationTime);
+      }
+      textNode["return"] = returnFiber;
+      return textNode;
+    }
+
+    function updateFragment(
+      returnFiber,
+      current,
+      fragment,
+      expirationTime,
+      key
+    ) {
+      let fm = void 0;
+      if (current === null || current.tag !== Fragment) {
+        fm = createFiberFromFragment(
+          fragment,
+          returnFiber.internalContextTag,
+          expirationTime,
+          key
+        );
+      } else {
+        fm = useFiber(current, fragment, expirationTime);
+      }
+      fm["return"] = returnFiber;
+      return fm;
+    }
+
     function useFiber(fiber, pendingProps, expirationTime) {
       const clone = createWorkInProgress(fiber, pendingProps, expirationTime);
       clone.index = 0;
@@ -855,14 +1373,7 @@ import warning from "./warning";
     }
 
     function coerceRef(current, element) {
-      
-    }
-
-    function placeSingleChild(newFiber) {
-      if (shouldTrackSideEffects && newFiber.alternate === null) {
-        newFiber.effectTag = Placement;
-      }
-      return newFiber;
+      return null;
     }
 
     function reconcileSingleElement(
@@ -901,13 +1412,147 @@ import warning from "./warning";
       return created;
     }
 
+    function reconcileSingleTextNode(
+      returnFiber,
+      currentFirstChild,
+      textContent,
+      expirationTime
+    ) {
+      if (currentFirstChild !== null && currentFirstChild.tag === HostText) {
+        deleteRemainingChildren(returnFiber, currentFirstChild.sibling);
+        const existing = useFiber(returnFiber, textContent, expirationTime);
+        existing["return"] = returnFiber;
+        return existing;
+      }
+      deleteRemainingChildren(returnFiber.currentFirstChild);
+      const created = createFiberFromText(
+        textContent,
+        returnFiber.internalContextTag,
+        expirationTime
+      );
+      created["return"] = returnFiber;
+      return created;
+    }
+
+    function reconcileChildrenArray(
+      returnFiber,
+      currentFirstChild,
+      newChildren,
+      expirationTime
+    ) {
+      let resultingFirstChild = null;
+      let previousNewFiber = null;
+
+      let oldFiber = currentFirstChild;
+      let lastPlacedIndex = 0;
+      let newIndex = 0;
+      let nextOldFiber = null;
+      for (; oldFiber !== null && newIndex < newChildren.length; newIndex++) {
+        if (oldFiber.index > newIndex) {
+          newOldFiber = oldFiber;
+          oldFiber = null;
+        } else {
+          nextOldFiber = oldFiber.sibling;
+        }
+        const newFiber = updateSlot(
+          returnFiber,
+          oldFiber,
+          newChildren[newIndex],
+          expirationTime
+        );
+        if (newFiber === null) {
+          if (oldFiber === null) {
+            oldFiber = nextOldFiber;
+          }
+          break;
+        }
+        if (shouldTrackSideEffects) {
+          if (oldFiber && newFiber.alternate === null) {
+            deleteChild(returnFiber, oldFiber);
+          }
+        }
+        lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
+        if (previousNewFiber === null) {
+          resultingFirstChild = newFiber;
+        } else {
+          previousNewFiber.sibling = newFiber;
+        }
+        previousNewFiber = newFiber;
+        oldFiber = nextOldFiber;
+      }
+
+      if (newIndex === newChildren.length) {
+        deleteRemainingChildren(returnFiber, oldFiber);
+        return resultingFirstChild;
+      }
+
+      if (oldFiber === null) {
+        for (; newIndex < newChildren.length; newIndex++) {
+          const newFiber = createChild(
+            returnFiber,
+            newChild[newIndex],
+            expirationTime
+          );
+          if (!newFiber) {
+            continue;
+          }
+          lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
+          if (previousNewFiber === null) {
+            resultingFirstChild = newFiber;
+          } else {
+            previousNewFiber.sibling = newFiber;
+          }
+          previousNewFiber = newFiber;
+        }
+        return resultingFirstChild;
+      }
+
+      const existingChildren = mapRemainingChildren(returnFiber, oldFiber);
+      for (; newIndex < newChildren.length; newIndex++) {
+        const newFiber = updateFromMap(
+          existingChildren,
+          returnFiber,
+          newIndex,
+          newChildren[newIndex],
+          expirationTime
+        );
+        if (newFiber) {
+          if (shouldTrackSideEffects) {
+            if (newFiber.alternate !== null) {
+              existingChildren["delete"](
+                newFiber.key === null ? newIndex : newFiber.key
+              );
+            }
+          }
+          lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIndex);
+          if (previousNewFiber === null) {
+            resultingFirstChild = newFiber;
+          } else {
+            previousNewFiber.sibling = newFiber;
+          }
+          previousNewFiber = newFiber;
+        }
+      }
+
+      if (shouldTrackSideEffects) {
+        existingChildren.forEach(child => deleteChild(returnFiber, child));
+      }
+
+      return resultingFirstChild;
+    }
+
     function reconcileChildFibers(
       returnFiber,
       currentFirstChild,
       newChild,
       expirationTime
     ) {
-      if (!!newChild && newChild.type !== void 0) {
+      debugger;
+      if (
+        typeof newChild === "object" &&
+        newChild !== null &&
+        newChild.type !== void 0
+      ) {
         return placeSingleChild(
           reconcileSingleElement(
             returnFiber,
@@ -917,7 +1562,28 @@ import warning from "./warning";
           )
         );
       }
+
+      if (typeof newChild === "string" || typeof newChild === "number") {
+        return placeSingleChild(
+          reconcileSingleTextNode(
+            returnFiber,
+            currentFiber,
+            "" + newChild,
+            expirationTime
+          )
+        );
+      }
+
+      if (Array.isArray(newChild)) {
+        return reconcileChildrenArray(
+          returnFiber,
+          currentFirstChild,
+          newChild,
+          expirationTime
+        );
+      }
     }
+
     return reconcileChildFibers;
   }
 
@@ -956,7 +1622,9 @@ import warning from "./warning";
     }
   }
 
-  function bailoutOnAlreadyFinishedWork(current, workInProgress) {}
+  function bailoutOnAlreadyFinishedWork(current, workInProgress) {
+    debugger;
+  }
 
   function renderRoot(root, expirationTime) {
     !!isWorking
