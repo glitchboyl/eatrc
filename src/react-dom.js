@@ -363,7 +363,7 @@ import warning from "./warning";
     }
 
     if (queue.callbackList !== null) {
-      workInProgress.effectTag |= Callback;
+      workInProgress.effectTag = Callback;
     } else if (queue.first === null && !queue.hasForceUpdate) {
       workInProgress.updateQueue = null;
     }
@@ -432,6 +432,17 @@ import warning from "./warning";
 
     insertUpdateIntoQueue(queue1, update);
     queue2.last = update;
+  }
+
+  function getUpdateExpirationTime(fiber) {
+    if (fiber.tag !== ClassComponent && fiber.tag !== HostRoot) {
+      return NoWork;
+    }
+    const { updateQueue } = fiber;
+    if (updateQueue === null) {
+      return NoWork;
+    }
+    return updateQueue.expirationTime;
   }
 
   let enableUserTimingAPI = true;
@@ -695,18 +706,18 @@ import warning from "./warning";
   function performWork(minExpirationTime) {
     // debugger
     findHighestPriorityRoot();
-    performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime);
-    findHighestPriorityRoot();
+    // performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime);
+    // findHighestPriorityRoot();
 
-    // while (
-    //   nextFlushedRoot !== null &&
-    //   nextFlushedExpirationTime !== NoWork &&
-    //   (minExpirationTime === NoWork ||
-    //     nextFlushedExpirationTime <= minExpirationTime)
-    // ) {
-    //   performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime);
-    //   findHighestPriorityRoot();
-    // }
+    while (
+      nextFlushedRoot !== null &&
+      nextFlushedExpirationTime !== NoWork &&
+      (minExpirationTime === NoWork ||
+        nextFlushedExpirationTime <= minExpirationTime)
+    ) {
+      performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime);
+      findHighestPriorityRoot();
+    }
   }
 
   function performWorkOnRoot(root, expirationTime) {
@@ -792,7 +803,87 @@ import warning from "./warning";
     return null;
   }
 
-  function completeWork(current, workInProgress, renderExpirationTime) {}
+  function completeWork(current, workInProgress, renderExpirationTime) {
+    let newProps = workInProgress.pendingProps;
+    if (newProps === null) {
+      newProps = workInProgress.memorizedProps;
+    } else if (
+      workInProgress.expirationTime !== Never ||
+      renderExpirationTime === Never
+    ) {
+      workInProgress.pendingProps = null;
+    }
+
+    switch (workInProgress.tag) {
+      case HostRoot: return null;
+      case FunctionalComponent:
+        return null;
+      case ClassComponent:
+        return null;
+      case HostComponent:
+        const rootContainerInstance = getRootHostContainer();
+        const { type } = workInProgress;
+        if (current !== null && workInProgress.stateNode != null) {
+          const oldProps = current.memorizedProps;
+          const instance = workInProgress.stateNode;
+          const updatePayload = prepareUpdate(
+            instance,
+            type,
+            oldProps,
+            newProps,
+            rootContainerInstance
+          );
+          updateHostComponent(
+            current,
+            workInProgress,
+            updatePayload,
+            type,
+            oldProps,
+            newProps,
+            rootContainerInstance
+          );
+          if (current.ref !== workInProgress.ref) {
+            markRef(workInProgress);
+          }
+        } else {
+          if (!newProps) {
+            !(workInProgress.stateNode !== null)
+              ? invariant(
+                  "We must have new props for new mounts. This error is likely caused by a bug in React. Please file an issue."
+                )
+              : void 0;
+            return null;
+          }
+          const instance = createInstance(
+            type,
+            newProps,
+            rootContainerInstance,
+            workInProgress
+          );
+          appendAllChildren(instance, workInProgress);
+          if (
+            finalizeInitialChildren(
+              instance,
+              type,
+              newProps,
+              rootContainerInstance
+            )
+          ) {
+            markUpdate(workInProgress);
+          }
+          workInProgress.stateNode = instance;
+
+          if (workInProgress.ref !== null) {
+            markRef(workInProgress);
+          }
+        }
+        return null;
+      case HostText:
+        return null;
+      case Fragment:
+        return null;
+    }
+  }
 
   function resetExpirationTime(workInProgress, renderTime) {
     if (renderTime !== Never && workInProgress.expirationTime === Never) {
@@ -821,22 +912,15 @@ import warning from "./warning";
     ) {
       return;
     }
-    // if (nextRenderExpirationTime <= mostRecentCurrentTime) {
-
-    // }
-    while (nextUnitOfWork !== null) {
-      nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    if (nextRenderExpirationTime <= mostRecentCurrentTime) {
+      while (nextUnitOfWork !== null) {
+        nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+      }
     }
   }
 
   function beginWork(current, workInProgress, renderExpirationTime) {
     debugger;
-    if (
-      workInProgress.expirationTime === NoWork ||
-      workInProgress.expirationTime > renderExpirationTime
-    ) {
-      return bailoutOnLowPriority(current, workInProgress);
-    }
 
     switch (workInProgress.tag) {
       case HostRoot:
@@ -916,6 +1000,22 @@ import warning from "./warning";
     const instance = new type(props);
     adoptClassInstance(workInProgress, instance);
     return instance;
+  }
+
+  function callComponentWillMount(workInProgress, instance) {
+    const oldState = instance.state;
+    instance.componentWillMount();
+    if (oldState !== instance.state) {
+      updater.enqueueReplaceState(instance, instance.state, null);
+    }
+  }
+
+  function callComponentWillReceiveProps(workInProgress, instance, newProps) {
+    const oldState = instance.state;
+    instance.componentWillReceiveProps(newProps);
+    if (oldState !== instance.state) {
+      updater, enqueueReplaceState(instance, instance.state, null);
+    }
   }
 
   function mountClassInstance(workInProgress, renderExpirationTime) {
@@ -1032,12 +1132,12 @@ import warning from "./warning";
 
     instance.props = newProps;
     instance.state = newState;
-    
+
     return shouldUpdate;
   }
 
   function updateHostRoot(current, workInProgress, renderExpirationTime) {
-    debugger;
+    // debugger;
     const { updateQueue } = workInProgress;
     if (updateQueue !== null) {
       const prevState = workInProgress.memorizedState;
@@ -1071,29 +1171,29 @@ import warning from "./warning";
   }
 
   function updateFunctionalComponent(current, workInProgress) {
-    // const fn = workInProgress.type;
-    // const { memorizedProps } = workInProgress;
-    // let nextProps = workInProgress.pendingProps;
-    // if(hasContextChanged()){
-    //   if(nextProps === null){
-    //     nextProps = memorizedProps;
-    //   }
-    // } else {
-    //   if(nextProps === null || memorizedProps === nextProps) {
-    //     return bailoutOnAlreadyFinishedWork(current, workInProgress);
-    //   }
-    // }
-    // const unmaskedContext = getUnmaskedContext(workInProgress);
-    // const
+    const fn = workInProgress.type;
+    const { memorizedProps } = workInProgress;
+    let nextProps = workInProgress.pendingProps;
+
+    if (nextProps === null || memorizedProps === nextProps) {
+      return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    }
+
+    const nextChildren = fn(nextProps);
+    workInProgress.effectTag = PerformedWork;
+    reconcileChildren(current, workInProgress, nextChildren);
+    workInProgress.memorizedProps = nextProps;
+    return workInProgress.child;
   }
 
   function updateClassComponent(current, workInProgress, renderExpirationTime) {
+    // debugger
     let shouldUpdate = void 0;
     if (current === null) {
       if (!workInProgress.stateNode) {
         constructClassInstance(workInProgress, workInProgress.pendingProps);
         mountClassInstance(workInProgress, renderExpirationTime);
-        shouldUpdate;
+        shouldUpdate = true;
       } else {
         invariant("Resuming work not yet implemented.");
       }
@@ -1107,11 +1207,88 @@ import warning from "./warning";
     return finishClassComponent(current, workInProgress, shouldUpdate);
   }
 
-  function updateHostComponent() {}
+  function finishClassComponent(current, workInProgress, shouldUpdate) {
+    markRef(current, workInProgress);
+    if (!shouldUpdate) {
+      return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    }
 
-  function updateHostText() {}
+    const instance = workInProgress.stateNode;
+    const nextChildren = instance.render();
+    workInProgress.effectTag = PerformedWork;
+    reconcileChildren(current, workInProgress, nextChildren);
+    workInProgress.memorizedState = instance.state;
+    workInProgress.memorizedProps = instance.props;
 
-  function updateFragment() {}
+    return workInProgress.child;
+  }
+
+  function updateHostComponent(current, workInProgress, renderExpirationTime) {
+    const { type, memorizedProps } = workInProgress;
+    let nextProps = workInProgress.pendingProps;
+    if (nextProps === null) {
+      nextProps = memorizedProps;
+      !(nextProps !== null)
+        ? invariant(
+            "We should always have pending or current props. This error is likely caused by a bug in React. Please file an issue."
+          )
+        : void 0;
+    }
+    const prevProps = current !== null ? current.memorizedProps : null;
+    if (nextProps === null || memorizedProps === nextProps) {
+      return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    }
+    let nextChildren = nextProps.children;
+    const isDirectTextChild = DOMRenderer.shouldSetTextContent(type, nextProps);
+    if (isDirectTextChild) {
+      nextChildren = null;
+    } else if (prevProps && DOMRenderer.shouldSetTextContent(type, prevProps)) {
+      workInProgress.effectTag = ContentReset;
+    }
+
+    markRef(current, workInProgress);
+
+    if (
+      renderExpirationTime !== Never &&
+      !useSyncScheduling &&
+      !!nextProps.hidden
+    ) {
+      workInProgress.expirationTime = Never;
+      return null;
+    }
+    reconcileChildren(current, workInProgress, nextChildren);
+    workInProgress.memorizedProps = nextProps;
+    return workInProgress.child;
+  }
+
+  function updateHostText(current, workInProgress) {
+    let nextProps = workInProgress.pendingProps;
+    if (nextProps === null) {
+      nextProps = workInProgress.memorizedProps;
+    }
+    workInProgress.memorizedProps = nextProps;
+    return null;
+  }
+
+  function updateFragment(current, workInProgress) {
+    let nextChildren = workInProgress.pendingProps;
+    if (
+      nextChildren === null ||
+      workInProgress.memorizedProps === nextChildren
+    ) {
+      return bailoutOnAlreadyFinishedWork(current, workInProgress);
+    }
+    reconcileChildren(current, workInProgress, nextChildren);
+    workInProgress.memorizedProps = nextChildren;
+    return workInProgress.child;
+  }
+
+  function markRef(current, workInProgress) {
+    const { ref } = workInProgress;
+    if (ref !== null && (!current || current.ref !== ref)) {
+      workInProgress.effectTag = Ref;
+    }
+  }
 
   function ChildReconciler(shouldTrackSideEffects) {
     function createChild(returnFiber, newChild, expirationTime) {
@@ -1490,7 +1667,7 @@ import warning from "./warning";
         for (; newIndex < newChildren.length; newIndex++) {
           const newFiber = createChild(
             returnFiber,
-            newChild[newIndex],
+            newChildren[newIndex],
             expirationTime
           );
           if (!newFiber) {
@@ -1547,7 +1724,7 @@ import warning from "./warning";
       newChild,
       expirationTime
     ) {
-      debugger;
+      // debugger;
       if (
         typeof newChild === "object" &&
         newChild !== null &&
@@ -1599,6 +1776,35 @@ import warning from "./warning";
   const reconcileChildFibers = ChildReconciler(true);
   const mountChildFibers = ChildReconciler(false);
 
+  function cloneChildFibers(current, workInProgress) {
+    !(current === null || workInProgress.child === current.child)
+      ? invariant("Resuming work not yet implemented.")
+      : void 0;
+    if (workInProgress.child === null) {
+      return;
+    }
+
+    let currentChild = workInProgress.child;
+    let newChild = createWorkInProgress(
+      currentChild,
+      currentChild.pendingProps,
+      currentChild.expirationTime
+    );
+    workInProgress.child = newChild;
+
+    newChild["return"] = workInProgress;
+    while (currentChild.sibling !== null) {
+      currentChild = currentChild.sibling;
+      newChild = newChild.sibling = createWorkInProgress(
+        currentChild,
+        currentChild.pendingProps,
+        currentChild.expirationTime
+      );
+      newChild["return"] = workInProgress;
+    }
+    newChild.sibling = null;
+  }
+
   function reconcileChildrenAtExpirationTime(
     current,
     workInProgress,
@@ -1623,7 +1829,9 @@ import warning from "./warning";
   }
 
   function bailoutOnAlreadyFinishedWork(current, workInProgress) {
-    debugger;
+    // debugger;
+    cloneChildFibers(current, workInProgress);
+    return workInProgress.child;
   }
 
   function renderRoot(root, expirationTime) {
@@ -1729,6 +1937,13 @@ import warning from "./warning";
         }
       }
       return fn();
+    },
+    shouldSetTextContent(type, props) {
+      return (
+        type === "textarea" ||
+        typeof props.children === "string" ||
+        typeof props.children === "number"
+      );
     }
   });
 
