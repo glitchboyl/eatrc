@@ -1,5 +1,5 @@
-﻿import invariant from "./invariant";
-import warning from "./warning";
+﻿import invariant from "@/lib/invariant";
+import warning from "@/lib/warning";
 
 (() => {
   const ReactNoopUpdateQueue = {
@@ -114,7 +114,7 @@ import warning from "./warning";
     this.updater.enqueueSetState(this, partialState);
   };
 
-  const React = { createElement, Component };
+  const React = { createElement, Component, Children: {} };
 
   module.exports = React;
 })();

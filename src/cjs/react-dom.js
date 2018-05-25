@@ -1,6 +1,6 @@
 ﻿import React from "./react";
-import invariant from "./invariant";
-import warning from "./warning";
+import invariant from "@/lib/invariant";
+import warning from "@/lib/warning";
 
 (() => {
   // 最开始未载入 React 会报出错误.
@@ -148,6 +148,8 @@ import warning from "./warning";
           node.nodeValue === " react-mount-point-unstable "))
     );
   }
+
+  let getRootHostContainer = null;
 
   const createFiber = (tag, key, internalContextTag) => {
     return new FiberNode(tag, key, internalContextTag);
@@ -477,10 +479,18 @@ import warning from "./warning";
       const newRoot = DOMRenderer.createContainer(container);
       root = container._reactRootContainer = newRoot;
       DOMRenderer.unbatchedUpdates(() => {
-        DOMRenderer.updateContainer(children, newRoot, callback);
+        DOMRenderer.updateContainer(
+          children,
+          newRoot,
+          callback
+        );
       });
     } else {
-      DOMRenderer.updateContainer(children, newRoot, callback);
+      DOMRenderer.updateContainer(
+        children,
+        newRoot,
+        callback
+      );
     }
     return DOMRenderer.getPublicRootInstance(root);
   }
@@ -815,7 +825,8 @@ import warning from "./warning";
     }
 
     switch (workInProgress.tag) {
-      case HostRoot: return null;
+      case HostRoot:
+        return null;
       case FunctionalComponent:
         return null;
       case ClassComponent:
@@ -1906,29 +1917,33 @@ import warning from "./warning";
     return remainingTime;
   }
 
-  const DOMRenderer = Object.freeze({
-    getPublicInstance(instance) {
+  const DOMRenderer = (() => {
+    // utils.
+    function getPublicInstance(instance) {
       return instance;
-    },
-    getPublicRootInstance(container) {
+    }
+
+    // module.export Functions.
+
+    function getPublicRootInstance(container) {
       let { child } = container.current;
       if (!child) {
         return null;
       }
       switch (child.tag) {
         case HostComponent:
-          return this.getPublicInstance(child.stateNode);
+          return getPublicInstance(child.stateNode);
         default:
           return child.stateNode;
       }
-    },
-    createContainer(containerInfo) {
+    }
+    function createContainer(containerInfo) {
       return createFiberRoot(containerInfo);
-    },
-    updateContainer(element, container, callback) {
+    }
+    function updateContainer(element, container, callback) {
       scheduleTopLevelUpdate(container.current, element, callback);
-    },
-    unbatchedUpdates(fn) {
+    }
+    function unbatchedUpdates(fn) {
       if (isBatchingUpdates && !isUnbatchingUpdates) {
         try {
           return fn();
@@ -1937,18 +1952,59 @@ import warning from "./warning";
         }
       }
       return fn();
-    },
-    shouldSetTextContent(type, props) {
+    }
+    function prepareUpdate(
+      domElement,
+      tag,
+      lastRawProps,
+      nextRawProps,
+      rootContainerElement
+    ) {
+      let updatePayload = null;
+
+      let lastProps;
+      let nextProps;
+      switch (tag) {
+        case "input":
+          lastProps = getHostProps(domElement, lastRawProps);
+          nextProps = getHostProps(domElement, nextRawProps);
+          updatePayload = [];
+          break;
+        case "option":
+          updatePayload = [];
+          break;
+        case "select":
+          updatePayload = [];
+          break;
+        case "textarea":
+          updatePayload = [];
+          break;
+        default:
+          updatePayload = [];
+          break;
+      }
+    }
+    function shouldSetTextContent(type, props) {
       return (
         type === "textarea" ||
         typeof props.children === "string" ||
         typeof props.children === "number"
       );
     }
-  });
+
+    return Object.freeze({
+      getPublicRootInstance,
+      createContainer,
+      updateContainer,
+      unbatchedUpdates,
+      prepareUpdate,
+      shouldSetTextContent
+    });
+  })();
 
   const ReactDOM = Object.freeze({
     render(element, container, callback) {
+      if (getRootHostContainer === null) getRootHostContainer = () => container;
       return renderSubtreeIntoContainer(null, element, container, callback);
     }
   });

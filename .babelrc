@@ -1,6 +1,11 @@
 {
   "presets": ["env"],
   "plugins": [
-      ["transform-react-jsx"]
+      ["transform-react-jsx"],
+      ["module-resolver", {
+        "alias": {
+          "@": "./src"
+        }
+      }]
   ]
 }
