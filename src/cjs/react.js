@@ -114,7 +114,22 @@ import warning from "@/lib/warning";
     this.updater.enqueueSetState(this, partialState);
   };
 
-  const React = { createElement, Component, Children: {} };
+  function forEachChildren(children, forEachFn) {
+    if (children == null) {
+      return children;
+    }
+    children.forEach(child => {
+      forEachFn(child);
+    });
+  }
+
+  const React = {
+    createElement,
+    Component,
+    Children: {
+      forEach: forEachChildren
+    }
+  };
 
   module.exports = React;
 })();

@@ -10,30 +10,6 @@ import warning from "@/lib/warning";
       )
     : void 0;
 
-  function get(key) {
-    return key._reactInternalFiber;
-  }
-
-  function has(key) {
-    return key._reactInternalFiber !== undefined;
-  }
-
-  function set(key, value) {
-    key._reactInternalFiber = value;
-  }
-
-  function getComponentName(fiber) {
-    var type = fiber.type;
-
-    if (typeof type === "string") {
-      return type;
-    }
-    if (typeof type === "function") {
-      return type.displayName || type.name;
-    }
-    return null;
-  }
-
   const IndeterminateComponent = 0;
   const HostRoot = 1; // Root of a host tree. Could be nested inside another node.
   const FunctionalComponent = 2;
@@ -57,6 +33,136 @@ import warning from "@/lib/warning";
   const Callback = 6;
   const Err = 7;
   const Ref = 8;
+
+  const randomKey = Math.random()
+    .toString(36)
+    .slice(2);
+  const internalInstanceKey = "__reactInternalInstance$" + randomKey;
+  const internalEventHandlersKey = "__reactEventHandlers$" + randomKey;
+
+  const alreadyListeningTo = {};
+  const topListenersIDKey = "_reactListenersID" + ("" + Math.random()).slice(2);
+  let reactTopListenerCounter = 0;
+
+  const eventTypes = [
+    "abort",
+    "animationEnd",
+    "animationIteration",
+    "animationStart",
+    "blur",
+    "cancel",
+    "canPlay",
+    "canPlayThrough",
+    "click",
+    "close",
+    "contextMenu",
+    "copy",
+    "cut",
+    "doubleClick",
+    "drag",
+    "dragEnd",
+    "dragEnter",
+    "dragExit",
+    "dragLeave",
+    "dragOver",
+    "dragStart",
+    "drop",
+    "durationChange",
+    "emptied",
+    "encrypted",
+    "ended",
+    "error",
+    "focus",
+    "input",
+    "invalid",
+    "keyDown",
+    "keyPress",
+    "keyUp",
+    "load",
+    "loadedData",
+    "loadedMetadata",
+    "loadStart",
+    "mouseDown",
+    "mouseMove",
+    "mouseOut",
+    "mouseOver",
+    "mouseUp",
+    "paste",
+    "pause",
+    "play",
+    "playing",
+    "progress",
+    "rateChange",
+    "reset",
+    "scroll",
+    "seeked",
+    "seeking",
+    "stalled",
+    "submit",
+    "suspend",
+    "timeUpdate",
+    "toggle",
+    "touchCancel",
+    "touchEnd",
+    "touchMove",
+    "touchStart",
+    "transitionEnd",
+    "volumeChange",
+    "waiting",
+    "wheel"
+  ].map(event => {
+    return "on" + event[0].toUpperCase() + event.slice(1);
+  });
+
+  function get(key) {
+    return key._reactInternalFiber;
+  }
+
+  function has(key) {
+    return key._reactInternalFiber !== undefined;
+  }
+
+  function set(key, value) {
+    key._reactInternalFiber = value;
+  }
+
+  function getListeningForDocument(mountAt) {
+    if (!Object.prototype.hasOwnProperty.call(mountAt, topListenersIDKey)) {
+      mountAt[topListenersIDKey] = reactTopListenerCounter++;
+      alreadyListeningTo[mountAt[topListenersIDKey]] = {};
+    }
+    return alreadyListeningTo[mountAt[topListenersIDKey]];
+  }
+
+  function listenTo(regName, contentDocumentHandle) {
+    const mountAt = contentDocumentHandle;
+    const isListening = getListeningForDocument(mountAt);
+    isListening[regName] = true;
+  }
+
+  function getComponentName(fiber) {
+    var type = fiber.type;
+
+    if (typeof type === "string") {
+      return type;
+    }
+    if (typeof type === "function") {
+      return type.displayName || type.name;
+    }
+    return null;
+  }
+
+  function trapClickOnNonInteractiveElement(node) {
+    node.onclick = () => {};
+  }
+
+  function precacheFiberNode(hostInst, node) {
+    node[internalInstanceKey] = hostInst;
+  }
+
+  function updateFiberProps(node, props) {
+    node[internalEventHandlersKey] = props;
+  }
 
   const UNIT_SIZE = 10; // 工作单元可用时间.
   // 幻数偏移.
@@ -134,6 +240,16 @@ import warning from "@/lib/warning";
   const DOCUMENT_NODE = 9; // (整个)文档(DOM树的)节点.
   const DOCUMENT_FRAGMENT_NODE = 11; // 文档片段节点.
 
+  const RESERVED_PROPS = {
+    children: true,
+    defaultValue: true,
+    defaultChecked: true,
+    innerHTML: true,
+    style: true
+  };
+
+  const properties = {};
+
   /**
    * 检测 DOM节点 是否是有效节点.
    * @param {object} node DOM节点.
@@ -147,6 +263,154 @@ import warning from "@/lib/warning";
         (node.nodeType === COMMENT_NODE &&
           node.nodeValue === " react-mount-point-unstable "))
     );
+  }
+
+  function isReservedProp(name) {
+    return RESERVED_PROPS.hasOwnProperty(name);
+  }
+
+  function shouldSetAttribute(name, value) {
+    if (isReservedProp(name)) {
+      return false;
+    }
+    if (
+      name.length > 2 &&
+      (name[0] === "o" || name[0] === "O") &&
+      (name[1] === "n" || name[1] === "N")
+    ) {
+      return false;
+    }
+    if (value === null) {
+      return true;
+    }
+    switch (typeof value) {
+      case "boolean":
+      case "undefined":
+      case "number":
+      case "string":
+      case "object":
+        return true;
+      default:
+        // function, symbol
+        return false;
+    }
+  }
+
+  function setValueForStyles(node, styles) {
+    const { style } = node;
+    for (let styleName in styles) {
+      if (!styles.hasOwnProperty(styleName)) {
+        continue;
+      }
+      style[styleName] = styles[styleName];
+    }
+  }
+
+  function setTextContent(node, text) {
+    if (text) {
+      const { firstChild } = node;
+      if (
+        firstChild &&
+        firstChild === node.lastChild &&
+        firstChild.nodeType === TEXT_NODE
+      ) {
+        firstChild.nodeValue = text;
+        return;
+      }
+    }
+    node.textContent = text;
+  }
+
+  function setValueForProperty(node, name, value) {
+    // if (shouldSetAttribute(name, value)) {
+    // }
+    node.setAttribute(name, value);
+  }
+
+  function setInitialDOMProperties(
+    tag,
+    domElement,
+    rootContainerElement,
+    nextProps
+  ) {
+    for (let propKey in nextProps) {
+      if (!nextProps.hasOwnProperty(propKey)) {
+        continue;
+      }
+      let nextProp = nextProps[propKey];
+      if (propKey === "style") {
+        setValueForStyles(domElement, nextProp);
+      } else if (propKey === "children") {
+        if (typeof nextProp === "string") {
+          const canSetTextContent = tag !== "textarea" || nextProp !== "";
+          if (canSetTextContent) {
+            setTextContent(domElement, nextProp);
+          }
+        } else if (typeof nextProp === "number") {
+          setTextContent(domElement, "" + nextProp);
+        }
+      } else if (eventTypes.includes(propKey)) {
+        if (nextProp != null) {
+          if (typeof nextProp !== "function") {
+            warning(
+              `Expected '${propKey}' listener to be a function, instaed of got ${
+                nextProp === false
+                  ? "'false'"
+                  : "a value of '" + typeof nextProp + "' type."
+              }`
+            );
+          }
+          ensureListeningTo(rootContainerElement, propKey);
+        }
+      } else if (nextProp != null) {
+        setValueForProperty(domElement, propKey, nextProp);
+      }
+    }
+  }
+
+  function ensureListeningTo(rootContainerElement, regName) {
+    const doc =
+      rootContainerElement.nodeType === DOCUMENT_NODE ||
+      rootContainerElement.nodeType === DOCUMENT_FRAGMENT_NODE
+        ? rootContainerElement
+        : rootContainerElement.ownerDocument;
+    listenTo(regName, doc);
+  }
+
+  const voidElementTags = {
+    area: true,
+    base: true,
+    br: true,
+    col: true,
+    embed: true,
+    hr: true,
+    img: true,
+    input: true,
+    keygen: true,
+    link: true,
+    meta: true,
+    param: true,
+    source: true,
+    track: true,
+    wbr: true
+  };
+
+  function assertValidProps(tag, props) {
+    if (!props) {
+      return;
+    }
+    if (voidElementTags[tag]) {
+      props.children != null
+        ? invariant(
+            `${tag} is a void element tag and must not have 'children'.`
+          )
+        : void 0;
+    }
+    !(props.style == null || typeof props.style === "object")
+      ? invariant(
+          `The 'style' prop expects a mapping from style properties to values, not a string. For example, style={{marginRight: spacing + 'em'}} when using JSX.`
+        )
+      : void 0;
   }
 
   let getRootHostContainer = null;
@@ -479,18 +743,10 @@ import warning from "@/lib/warning";
       const newRoot = DOMRenderer.createContainer(container);
       root = container._reactRootContainer = newRoot;
       DOMRenderer.unbatchedUpdates(() => {
-        DOMRenderer.updateContainer(
-          children,
-          newRoot,
-          callback
-        );
+        DOMRenderer.updateContainer(children, newRoot, callback);
       });
     } else {
-      DOMRenderer.updateContainer(
-        children,
-        newRoot,
-        callback
-      );
+      DOMRenderer.updateContainer(children, newRoot, callback);
     }
     return DOMRenderer.getPublicRootInstance(root);
   }
@@ -716,8 +972,6 @@ import warning from "@/lib/warning";
   function performWork(minExpirationTime) {
     // debugger
     findHighestPriorityRoot();
-    // performWorkOnRoot(nextFlushedRoot, nextFlushedExpirationTime);
-    // findHighestPriorityRoot();
 
     while (
       nextFlushedRoot !== null &&
@@ -756,7 +1010,7 @@ import warning from "@/lib/warning";
   }
 
   function performUnitOfWork(workInProgress) {
-    debugger;
+    // debugger;
     const current = workInProgress.alternate;
     let next = beginWork(current, workInProgress, nextRenderExpirationTime);
     if (next === null) {
@@ -792,7 +1046,7 @@ import warning from "@/lib/warning";
           returnFiber.lastEffect = workInProgress.lastEffect;
         }
         const { effectTag } = workInProgress;
-        if (effectTag > PerformedWork) {
+        if (effectTag >= PerformedWork) {
           if (returnFiber.lastEffect !== null) {
             returnFiber.lastEffect.nextEffect = workInProgress;
           } else {
@@ -823,36 +1077,24 @@ import warning from "@/lib/warning";
     ) {
       workInProgress.pendingProps = null;
     }
-
     switch (workInProgress.tag) {
-      case HostRoot:
-        return null;
-      case FunctionalComponent:
-        return null;
-      case ClassComponent:
-        return null;
       case HostComponent:
         const rootContainerInstance = getRootHostContainer();
         const { type } = workInProgress;
         if (current !== null && workInProgress.stateNode != null) {
           const oldProps = current.memorizedProps;
           const instance = workInProgress.stateNode;
-          const updatePayload = prepareUpdate(
+          const updatePayload = DOMRenderer.prepareUpdate(
             instance,
             type,
             oldProps,
             newProps,
             rootContainerInstance
           );
-          updateHostComponent(
-            current,
-            workInProgress,
-            updatePayload,
-            type,
-            oldProps,
-            newProps,
-            rootContainerInstance
-          );
+          workInProgress.updateQueue = updatePayload;
+          if (updatePayload) {
+            markUpdate(workInProgress);
+          }
           if (current.ref !== workInProgress.ref) {
             markRef(workInProgress);
           }
@@ -865,15 +1107,14 @@ import warning from "@/lib/warning";
               : void 0;
             return null;
           }
-          const instance = createInstance(
+          const instance = DOMRenderer.createInstance(
             type,
             newProps,
-            rootContainerInstance,
             workInProgress
           );
           appendAllChildren(instance, workInProgress);
           if (
-            finalizeInitialChildren(
+            DOMRenderer.finalizeInitialChildren(
               instance,
               type,
               newProps,
@@ -890,9 +1131,34 @@ import warning from "@/lib/warning";
         }
         return null;
       case HostText:
+        const newText = newProps;
+        if (current && workInProgress.stateNode != null) {
+          const oldText = current.memorizedProps;
+          updateHostText$1(current, workInProgress, oldText, newText);
+        } else {
+          if (typeof newText !== "string") {
+            !(workInProgress.stateNode !== null)
+              ? invariant(
+                  "We must have new props for new mounts. This error is likely caused by a bug in React. Please file an issue."
+                )
+              : void 0;
+            return null;
+          }
+          workInProgress.stateNode = DOMRenderer.createTextInstance(
+            newText,
+            workInProgress
+          );
+        }
         return null;
+      case HostRoot:
+      case FunctionalComponent:
+      case ClassComponent:
       case Fragment:
         return null;
+      default:
+        invariant(
+          "Unknown unit of work tag. This error is likely caused by a bug in React. Please file an issue."
+        );
     }
   }
 
@@ -931,7 +1197,7 @@ import warning from "@/lib/warning";
   }
 
   function beginWork(current, workInProgress, renderExpirationTime) {
-    debugger;
+    // debugger;
 
     switch (workInProgress.tag) {
       case HostRoot:
@@ -958,6 +1224,16 @@ import warning from "@/lib/warning";
         invariant(
           "Unknown unit of work tag. This error is likely caused by a bug in React. Please file an issue."
         );
+    }
+  }
+
+  function updateHostText$1(current, workInProgress, oldText, newText) {
+    if (oldText !== newText) {
+      workInProgress.stateNode = DOMRenderer.createTextInstance(
+        newText,
+        workInProgress
+      );
+      markUpdate(workInProgress);
     }
   }
 
@@ -1235,6 +1511,7 @@ import warning from "@/lib/warning";
   }
 
   function updateHostComponent(current, workInProgress, renderExpirationTime) {
+    // debugger
     const { type, memorizedProps } = workInProgress;
     let nextProps = workInProgress.pendingProps;
     if (nextProps === null) {
@@ -1298,6 +1575,34 @@ import warning from "@/lib/warning";
     const { ref } = workInProgress;
     if (ref !== null && (!current || current.ref !== ref)) {
       workInProgress.effectTag = Ref;
+    }
+  }
+
+  function markUpdate(workInProgress) {
+    workInProgress.effectTag = Update;
+  }
+
+  function appendAllChildren(parent, workInProgress) {
+    let node = workInProgress.child;
+    while (node !== null) {
+      if (node.tag === HostComponent || node.tag === HostText) {
+        parent.appendChild(node.stateNode);
+      } else if (node.tag !== null) {
+        node.child["return"] = node;
+        node = node.child;
+        continue;
+      }
+      if (node === workInProgress) {
+        return;
+      }
+      while (node.sibling === null) {
+        if (node["return"] === null || node["return"] === workInProgress) {
+          return;
+        }
+        node = node["return"];
+      }
+      node.sibling["return"] = node["return"];
+      node = node.sibling;
     }
   }
 
@@ -1429,7 +1734,7 @@ import warning from "@/lib/warning";
           if (key !== null) {
             return null;
           }
-          return updateFragment(
+          return updateFragment$1(
             returnFiber,
             oldFiber,
             newChild,
@@ -1487,7 +1792,7 @@ import warning from "@/lib/warning";
 
         if (Array.isArray(newChild)) {
           const matchedFiber = existingChildren.get(newIndex) || null;
-          return updateFragment(
+          return updateFragment$1(
             returnFiber,
             matchedFiber,
             newChild,
@@ -1531,7 +1836,7 @@ import warning from "@/lib/warning";
       return textNode;
     }
 
-    function updateFragment(
+    function updateFragment$1(
       returnFiber,
       current,
       fragment,
@@ -1561,6 +1866,7 @@ import warning from "@/lib/warning";
     }
 
     function coerceRef(current, element) {
+      // to be continued;
       return null;
     }
 
@@ -1735,7 +2041,6 @@ import warning from "@/lib/warning";
       newChild,
       expirationTime
     ) {
-      // debugger;
       if (
         typeof newChild === "object" &&
         newChild !== null &&
@@ -1770,6 +2075,8 @@ import warning from "@/lib/warning";
           expirationTime
         );
       }
+
+      return deleteRemainingChildren(returnFiber, currentFirstChild);
     }
 
     return reconcileChildFibers;
@@ -1822,6 +2129,7 @@ import warning from "@/lib/warning";
     nextChildren,
     renderExpirationTime
   ) {
+    // debugger
     if (current === null) {
       workInProgress.child = mountChildFibers(
         workInProgress,
@@ -1874,17 +2182,8 @@ import warning from "@/lib/warning";
     return root.current.alternate;
   }
 
-  function commitAllHostEffects() {
-    while (nextEffect !== null) {
-      let effectTag = nextEffect.effectTag;
-      if (effectTag & ContentReset) {
-        commitResetTextContent(nextEffect);
-      }
-      nextEffect = nextEffect.nextEffect;
-    }
-  }
-
   function commitRoot(finishedWork) {
+    // debugger
     isWorking = true;
     isCommitting = true;
 
@@ -1908,7 +2207,7 @@ import warning from "@/lib/warning";
     }
 
     nextEffect = firstEffect;
-    // commitAllHostEffects();
+    commitAllHostEffects();
     root.current = finishedWork;
     isCommitting = false;
     isWorking = false;
@@ -1917,10 +2216,310 @@ import warning from "@/lib/warning";
     return remainingTime;
   }
 
+  function commitPlacement(finishedWork) {
+    // debugger
+    const parentFiber = finishedWork["return"];
+    let parent = void 0;
+    switch (parentFiber.tag) {
+      case HostRoot:
+        parent = parentFiber.stateNode.containerInfo;
+        break;
+      case HostComponent:
+        parent = parentFiber.stateNode;
+        break;
+      default:
+        invariant(
+          "Invalid host parent fiber. This error is likely caused by a bug in React. Please file an issue."
+        );
+    }
+    const before = finishedWork.sibling;
+    let node = finishedWork;
+    while (true) {
+      if (node.tag === HostComponent || node.tag === HostText) {
+        if (before) {
+          parent.insertBefore(node.stateNode, before);
+        } else {
+          parent.appendChild(node.stateNode);
+        }
+      } else if (node.child !== null) {
+        node.child["return"] = node;
+        node = node.child;
+        continue;
+      }
+      if (node === finishedWork) {
+        return;
+      }
+      while (node.sibling === null) {
+        if (node["return"] === null || node["return"] === finishedWork) {
+          return;
+        }
+        node = node["return"];
+      }
+      node.sibling["return"] = node["return"];
+      node = node.sibling;
+    }
+  }
+
+  function commitUpdate(
+    domElement,
+    updatePayload,
+    type,
+    oldProps,
+    newProps,
+    internalInstanceHandle
+  ) {
+    updateFiberProps(domElement, newProps);
+    // updateProperties(domElement, updatePayload, type, oldProps, newProps);
+  }
+
+  function commitTextUpdate(textInstance, oldText, newText) {
+    if (oldText !== newText) {
+      textInstance.nodeValue = newText;
+    }
+  }
+
+  function commitWork(current, finishedWork) {
+    switch (finishedWork.tag) {
+      case HostComponent:
+        const instance = finishedWork.stateNode;
+        if (instance != null) {
+          const newProps = finishedWork.memorizedProps;
+          const oldProps = current !== null ? current.memorizedProps : newProps;
+          const { type } = finishedWork;
+          const updatePayload = finishedWork.updateQueue;
+          finishedWork.updateQueue = null;
+          if (updatePayload !== null) {
+            commitUpdate(
+              instance,
+              updatePayload,
+              type,
+              oldProps,
+              newProps,
+              finishedWork
+            );
+          }
+        }
+        return;
+      case HostText:
+        !(finishedWork.stateNode !== null)
+          ? invariant(
+              "This should have a text node initialized. This error is likely caused by a bug in React. Please file an issue."
+            )
+          : void 0;
+        const textInstance = finishedWork.stateNode;
+        const newText = finishedWork.memorizedProps;
+        const oldText = current !== null ? current.memorizedProps : newText;
+        commitTextUpdate(textInstance, oldText, newText);
+        return;
+      case HostRoot:
+      case ClassComponent:
+        return;
+      default:
+        invariant(
+          "This unit of work tag should not have side-effects. This error is likely caused by a bug in React. Please file an issue."
+        );
+    }
+  }
+
+  function commitUnmount(current) {
+    switch (current.tag) {
+      case ClassComponent:
+        // detachRef(current);
+        const instance = current.stateNode;
+        if (typeof instance.componentWillUnmount === "function") {
+          instance.componentWillUnmount();
+        }
+        return;
+      case HostComponent:
+        // detachRef(current);
+        return;
+    }
+  }
+
+  function unmountHostComponents(current) {
+    let node = current;
+    let currentParentIsValid = false;
+    let currentParent = void 0;
+
+    while (true) {
+      if (!currentParentIsValid) {
+        let parent = node["return"];
+        findParent: while (true) {
+          !(parent !== null)
+            ? invariant(
+                "Expected to find a host parent. This error is likely caused by a bug in React. Please file an issue."
+              )
+            : void 0;
+          switch (parent.tag) {
+            case HostRoot:
+              currentParent = parent.stateNode.containerInfo;
+              break findParent;
+            case HostComponent:
+              currentParent = parent.stateNode;
+              break findParent;
+          }
+          parent = parent["return"];
+        }
+        currentParentIsValid = true;
+      }
+
+      if (node.tag === HostComponent || node.tag === HostText) {
+        currentParent.removeChild(node.stateNode);
+      } else {
+        commitUnmount(node);
+        if (node.child !== null) {
+          node.child["return"] = node;
+          node = node.child;
+          continue;
+        }
+      }
+    }
+  }
+
+  function detachFiber(current){
+    current['return'] = null;
+    current.child = null;
+    if(current.alternate){
+      current.alternate['return'] = null;
+      current.alternate.child = null;
+    }
+  }
+
+  function commitDeletion(current) {
+    unmountHostComponents(current);
+    detachFiber(current);
+  }
+
+  function commitAllHostEffects() {
+    // debugger
+    while (nextEffect !== null) {
+      let effectTag = nextEffect.effectTag;
+      switch (effectTag) {
+        case Placement:
+          commitPlacement(nextEffect);
+          nextEffect.effectTag = NoEffect;
+          break;
+        case PlacementAndUpdate:
+          // Placement.
+          commitPlacement(nextEffect);
+          nextEffect.effectTag = NoEffect;
+          // Update.
+          commitWork(nextEffect.alternate, nextEffect);
+          break;
+        case Update:
+          commitWork(nextEffect.alternate, nextEffect);
+          break;
+        case Deletion:
+          isUnmounting = true;
+          commitDeletion(nextEffect);
+          isUnmounting = false;
+          break;
+      }
+      nextEffect = nextEffect.nextEffect;
+    }
+  }
+
   const DOMRenderer = (() => {
     // utils.
+
     function getPublicInstance(instance) {
       return instance;
+    }
+    function createElement(type) {
+      let domElement;
+      if (type === "script") {
+        const div = document.createElement("div");
+        div.innerHTML = "<script></script>";
+        const { firstChild } = div;
+        domElement = div.removeChild(firstChild);
+      } else {
+        domElement = document.createElement(type);
+      }
+      return domElement;
+    }
+    function createTextNode(text) {
+      return document.createTextNode(text);
+    }
+    function setInitialProperties(
+      domElement,
+      tag,
+      rawProps,
+      rootContainerElement
+    ) {
+      let props;
+      switch (tag) {
+        case "input":
+        case "option":
+        case "select":
+        case "textarea":
+          props = getHostProps(tag, rawProps);
+          break;
+        default:
+          props = rawProps;
+      }
+      assertValidProps(tag, props);
+      setInitialDOMProperties(tag, domElement, rootContainerElement, props);
+    }
+    function shouldAutoFocusHostComponent(type, props) {
+      switch (type) {
+        case "button":
+        case "input":
+        case "select":
+        case "textarea":
+          return !!props.autoFocus;
+        default:
+          return false;
+      }
+    }
+    function getHostProps(tag, props) {
+      switch (tag) {
+        case "input":
+          const { value, checked } = props;
+          return Object.assign(
+            {
+              type: undefined,
+              step: undefined,
+              min: undefined,
+              max: undefined
+            },
+            props,
+            {
+              defaultChecked: undefined,
+              defaultValue: undefined,
+              value: value != null ? value : "",
+              checked: checked != null ? checked : false
+            }
+          );
+        case "option":
+          const hostProps = Object.assign({ children: undefined }, props);
+          const content = flattenChildren(props.children);
+          if (content) {
+            hostProps.children = content;
+          }
+          return hostProps;
+        case "select":
+          return Object.assign({}, props, {
+            value: undefined
+          });
+        case "textarea":
+          return Object.assign({}, props, {
+            value: undefined,
+            defaultValue: undefined,
+            children: ""
+          });
+      }
+    }
+    function flattenChildren(children) {
+      let content = "";
+      React.children.forEach(children, child => {
+        if (child == null) {
+          return;
+        }
+        if (typeof child === "string" || typeof child === "number") {
+          content += child;
+        }
+      });
+      return content;
     }
 
     // module.export Functions.
@@ -1936,6 +2535,17 @@ import warning from "@/lib/warning";
         default:
           return child.stateNode;
       }
+    }
+    function createInstance(type, props, internalInstanceHandle) {
+      const domElement = createElement(type);
+      precacheFiberNode(internalInstanceHandle, domElement);
+      updateFiberProps(domElement, props);
+      return domElement;
+    }
+    function createTextInstance(text, internalInstanceHandle) {
+      const textNode = createTextNode(text);
+      precacheFiberNode(internalInstanceHandle, textNode);
+      return textNode;
     }
     function createContainer(containerInfo) {
       return createFiberRoot(containerInfo);
@@ -1953,6 +2563,15 @@ import warning from "@/lib/warning";
       }
       return fn();
     }
+    function finalizeInitialChildren(
+      domElement,
+      type,
+      props,
+      rootContainerInstance
+    ) {
+      setInitialProperties(domElement, type, props, rootContainerInstance);
+      return shouldAutoFocusHostComponent(type, props);
+    }
     function prepareUpdate(
       domElement,
       tag,
@@ -1966,21 +2585,22 @@ import warning from "@/lib/warning";
       let nextProps;
       switch (tag) {
         case "input":
-          lastProps = getHostProps(domElement, lastRawProps);
-          nextProps = getHostProps(domElement, nextRawProps);
-          updatePayload = [];
-          break;
         case "option":
-          updatePayload = [];
-          break;
         case "select":
-          updatePayload = [];
-          break;
         case "textarea":
+          lastProps = getHostProps(tag, lastRawProps);
+          nextProps = getHostProps(tag, nextRawProps);
           updatePayload = [];
           break;
         default:
-          updatePayload = [];
+          lastProps = lastRawProps;
+          nextProps = nextRawProps;
+          if (
+            typeof lastProps.onClick !== "function" &&
+            typeof nextProps.onClick === "function"
+          ) {
+            trapClickOnNonInteractiveElement(domElement);
+          }
           break;
       }
     }
@@ -1994,9 +2614,12 @@ import warning from "@/lib/warning";
 
     return Object.freeze({
       getPublicRootInstance,
+      createInstance,
+      createTextInstance,
       createContainer,
       updateContainer,
       unbatchedUpdates,
+      finalizeInitialChildren,
       prepareUpdate,
       shouldSetTextContent
     });

@@ -26,24 +26,30 @@ export default class extends React.Component {
         {this.state.ass}
         <button
           onClick={() => {
-            this.setState({ ass: "deep dark", class: "custom" });
+            if (this.state.ass === "we can") {
+              this.setState({ ass: "deep dark", class: "custom" });
+            } else if(this.state.ass === "deep dark"){
+              this.setState({ ass: "we can", class: "text" });
+            }
           }}
         >
           van it
         </button>
-        <button onClick={this.state.ass === 'deep dark' ? this.boy : this.door}>change boss of this gym</button>
+        <button onClick={this.state.ass === "deep dark" ? this.boy : this.door}>
+          change boss of this gym
+        </button>
         <br />
         {test}
 
-        {this.state.ass === 'deep dark' ?  <span>call</span> : void 0}
+        {this.state.ass === "deep dark" ? <span>call</span> : void 0}
       </div>
     );
   }
-  boy(){
-    console.log('you get mad');
+  boy() {
+    console.log("you get mad");
   }
-  door(){
-    console.log('oh my shoulder');
+  door() {
+    console.log("oh my shoulder");
   }
   // componentDidMount() {
   //   console.log("component did mount.");
