@@ -1,4 +1,5 @@
 ﻿import React from "./react";
+import EventListener from "./EventListener";
 import invariant from "@/lib/invariant";
 import warning from "@/lib/warning";
 
@@ -114,6 +115,14 @@ import warning from "@/lib/warning";
     return "on" + event[0].toUpperCase() + event.slice(1);
   });
 
+  function getEventBaseName(eventName) {
+    if (eventTypes.includes(eventName)) {
+      const eventBaseName = eventName[2].toLowerCase() + eventName.slice(3);
+      return eventBaseName;
+    }
+    return null;
+  }
+
   function get(key) {
     return key._reactInternalFiber;
   }
@@ -124,6 +133,43 @@ import warning from "@/lib/warning";
 
   function set(key, value) {
     key._reactInternalFiber = value;
+  }
+
+  function getEventTarget(nativeEvent) {
+    const target = nativeEvent.target || nativeEvent.srcElement || window;
+    return target.nodeType === TEXT_NODE ? target.parentNode : target;
+  }
+
+  function getEventHandler(handlerName, eventTarget) {
+    if (!eventTarget) {
+      return null;
+    }
+    if (eventTarget.memorizedProps.hasOwnProperty(handlerName)) {
+      return eventTarget.memorizedProps[handlerName];
+    }
+    return null;
+  }
+
+  function dispatchEvent(handlerName, nativeEvent) {
+    const nativeEventTarget = getEventTarget(nativeEvent);
+    const eventHandler = getEventHandler(
+      handlerName,
+      nativeEventTarget[internalInstanceKey]
+    );
+    if (typeof eventHandler === "function") {
+      eventHandler();
+    }
+  }
+
+  function trapBubbledEvent(handlerName, handlerBaseName, element) {
+    if (!element) {
+      return null;
+    }
+    return EventListener.listen(
+      element,
+      handlerBaseName,
+      dispatchEvent.bind(null, handlerName)
+    );
   }
 
   function getListeningForDocument(mountAt) {
@@ -137,20 +183,26 @@ import warning from "@/lib/warning";
   function listenTo(regName, contentDocumentHandle) {
     const mountAt = contentDocumentHandle;
     const isListening = getListeningForDocument(mountAt);
-    isListening[regName] = true;
+    if (!(isListening.hasOwnProperty(regName) && isListening[regName])) {
+      const eventBaseName = getEventBaseName(regName);
+      if (!!eventBaseName) {
+        trapBubbledEvent(regName, eventBaseName, mountAt);
+      }
+      isListening[regName] = true;
+    }
   }
 
-  function getComponentName(fiber) {
-    var type = fiber.type;
+  // function getComponentName(fiber) {
+  //   var type = fiber.type;
 
-    if (typeof type === "string") {
-      return type;
-    }
-    if (typeof type === "function") {
-      return type.displayName || type.name;
-    }
-    return null;
-  }
+  //   if (typeof type === "string") {
+  //     return type;
+  //   }
+  //   if (typeof type === "function") {
+  //     return type.displayName || type.name;
+  //   }
+  //   return null;
+  // }
 
   function trapClickOnNonInteractiveElement(node) {
     node.onclick = () => {};
@@ -495,7 +547,6 @@ import warning from "@/lib/warning";
   }
 
   function createWorkInProgress(current, pendingProps, expirationTime) {
-    // debugger
     let workInProgress = current.alternate;
     if (workInProgress === null) {
       workInProgress = createFiber(
@@ -551,7 +602,6 @@ import warning from "@/lib/warning";
     props,
     renderExpirationTime
   ) {
-    // debugger
     if (current !== null && current.updateQueue === queue) {
       const { baseState, expirationTime, first, last, isInitialized } = queue;
       queue = workInProgress.updateQueue = {
@@ -643,7 +693,6 @@ import warning from "@/lib/warning";
   }
 
   function getStateFromUpdate(update, instance, prevState, props) {
-    // debugger
     const { partialState } = update;
     if (typeof partialState === "function") {
       let updateFn = partialState;
@@ -746,7 +795,7 @@ import warning from "@/lib/warning";
         DOMRenderer.updateContainer(children, newRoot, callback);
       });
     } else {
-      DOMRenderer.updateContainer(children, newRoot, callback);
+      DOMRenderer.updateContainer(children, root, callback);
     }
     return DOMRenderer.getPublicRootInstance(root);
   }
@@ -799,7 +848,6 @@ import warning from "@/lib/warning";
   }
 
   function findHighestPriorityRoot() {
-    // debugger
     let highestPriorityWork = NoWork;
     let highestPriorityRoot = null;
 
@@ -817,7 +865,7 @@ import warning from "@/lib/warning";
           if (root === root.nextScheduledRoot) {
             root.nextScheduledRoot = null;
             firstScheduledRoot = lastScheduledRoot = null;
-            return;
+            break;
           } else if (root === firstScheduledRoot) {
             let next = root.nextScheduledRoot;
             firstScheduledRoot = next;
@@ -970,7 +1018,6 @@ import warning from "@/lib/warning";
   }
 
   function performWork(minExpirationTime) {
-    // debugger
     findHighestPriorityRoot();
 
     while (
@@ -985,7 +1032,6 @@ import warning from "@/lib/warning";
   }
 
   function performWorkOnRoot(root, expirationTime) {
-    // debugger
     !!isRendering
       ? invariant(
           "performWorkOnRoot was called recursively. This error is likely caused by a bug in React. Please file an issue."
@@ -1010,7 +1056,6 @@ import warning from "@/lib/warning";
   }
 
   function performUnitOfWork(workInProgress) {
-    // debugger;
     const current = workInProgress.alternate;
     let next = beginWork(current, workInProgress, nextRenderExpirationTime);
     if (next === null) {
@@ -1182,7 +1227,6 @@ import warning from "@/lib/warning";
   }
 
   function workLoop(expirationTime) {
-    // debugger
     if (
       nextRenderExpirationTime === NoWork ||
       nextRenderExpirationTime > expirationTime
@@ -1191,14 +1235,20 @@ import warning from "@/lib/warning";
     }
     if (nextRenderExpirationTime <= mostRecentCurrentTime) {
       while (nextUnitOfWork !== null) {
+        if (nextUnitOfWork.tag === ClassComponent) {
+          // if (!!nextUnitOfWork.child) {
+          //   console.log(
+          //     nextUnitOfWork.child.memorizedProps.children[1].props.children[1]
+          //   );
+          // }
+          // console.log(nextUnitOfWork)
+        }
         nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
       }
     }
   }
 
   function beginWork(current, workInProgress, renderExpirationTime) {
-    // debugger;
-
     switch (workInProgress.tag) {
       case HostRoot:
         return updateHostRoot(current, workInProgress, renderExpirationTime);
@@ -1229,10 +1279,6 @@ import warning from "@/lib/warning";
 
   function updateHostText$1(current, workInProgress, oldText, newText) {
     if (oldText !== newText) {
-      workInProgress.stateNode = DOMRenderer.createTextInstance(
-        newText,
-        workInProgress
-      );
       markUpdate(workInProgress);
     }
   }
@@ -1340,6 +1386,29 @@ import warning from "@/lib/warning";
     }
   }
 
+  function checkShouldComponentUpdate(
+    workInProgress,
+    oldProps,
+    newProps,
+    oldState,
+    newState
+  ) {
+    if (
+      oldProps === null ||
+      (workInProgress.updateQueue !== null &&
+        workInProgress.updateQueue.hasForceUpdate)
+    ) {
+      return true;
+    }
+    const instance = workInProgress.stateNode;
+    const { type } = workInProgress;
+    if (typeof instance.shouldComponentUpdate === "function") {
+      const shouldUpdate = instance.shouldComponentUpdate(newPorps, newState);
+      return shouldUpdate;
+    }
+    return true;
+  }
+
   function updateClassInstance(current, workInProgress, renderExpirationTime) {
     const instance = workInProgress.stateNode;
     resetInputPointers(workInProgress, instance);
@@ -1424,7 +1493,6 @@ import warning from "@/lib/warning";
   }
 
   function updateHostRoot(current, workInProgress, renderExpirationTime) {
-    // debugger;
     const { updateQueue } = workInProgress;
     if (updateQueue !== null) {
       const prevState = workInProgress.memorizedState;
@@ -1474,7 +1542,6 @@ import warning from "@/lib/warning";
   }
 
   function updateClassComponent(current, workInProgress, renderExpirationTime) {
-    // debugger
     let shouldUpdate = void 0;
     if (current === null) {
       if (!workInProgress.stateNode) {
@@ -1511,7 +1578,6 @@ import warning from "@/lib/warning";
   }
 
   function updateHostComponent(current, workInProgress, renderExpirationTime) {
-    // debugger
     const { type, memorizedProps } = workInProgress;
     let nextProps = workInProgress.pendingProps;
     if (nextProps === null) {
@@ -2129,7 +2195,6 @@ import warning from "@/lib/warning";
     nextChildren,
     renderExpirationTime
   ) {
-    // debugger
     if (current === null) {
       workInProgress.child = mountChildFibers(
         workInProgress,
@@ -2148,7 +2213,6 @@ import warning from "@/lib/warning";
   }
 
   function bailoutOnAlreadyFinishedWork(current, workInProgress) {
-    // debugger;
     cloneChildFibers(current, workInProgress);
     return workInProgress.child;
   }
@@ -2183,7 +2247,6 @@ import warning from "@/lib/warning";
   }
 
   function commitRoot(finishedWork) {
-    // debugger
     isWorking = true;
     isCommitting = true;
 
@@ -2217,7 +2280,6 @@ import warning from "@/lib/warning";
   }
 
   function commitPlacement(finishedWork) {
-    // debugger
     const parentFiber = finishedWork["return"];
     let parent = void 0;
     switch (parentFiber.tag) {
@@ -2373,14 +2435,25 @@ import warning from "@/lib/warning";
           continue;
         }
       }
+      if (node === current) {
+        return;
+      }
+      while (node.sibling === null) {
+        if (node["return"] === null || node["return"] === current) {
+          return;
+        }
+        node = node["return"];
+      }
+      node.sibling["return"] = node["return"];
+      node = node.sibling;
     }
   }
 
-  function detachFiber(current){
-    current['return'] = null;
+  function detachFiber(current) {
+    current["return"] = null;
     current.child = null;
-    if(current.alternate){
-      current.alternate['return'] = null;
+    if (current.alternate) {
+      current.alternate["return"] = null;
       current.alternate.child = null;
     }
   }
@@ -2391,22 +2464,21 @@ import warning from "@/lib/warning";
   }
 
   function commitAllHostEffects() {
-    // debugger
     while (nextEffect !== null) {
-      let effectTag = nextEffect.effectTag;
+      const { effectTag } = nextEffect;
       switch (effectTag) {
         case Placement:
           commitPlacement(nextEffect);
           nextEffect.effectTag = NoEffect;
+          break;
+        case Update:
+          commitWork(nextEffect.alternate, nextEffect);
           break;
         case PlacementAndUpdate:
           // Placement.
           commitPlacement(nextEffect);
           nextEffect.effectTag = NoEffect;
           // Update.
-          commitWork(nextEffect.alternate, nextEffect);
-          break;
-        case Update:
           commitWork(nextEffect.alternate, nextEffect);
           break;
         case Deletion:
